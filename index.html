@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="sQ8Brg0uMJrMCVcabXtzw4">
+<head data-page-node-id="11HfJpHRWlJGANvoblnoXL">
+<meta charset="UTF-8" data-page-node-id="xjeHLu7ZIti55mUdYGgT1F" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" data-page-node-id="ng0UFwlzkMHYHZvBgUQW3D" />
+<meta name="theme-color" content="#eef1ff" data-page-node-id="fZ5bbdsXtVmHZIbeSdJFaD" />
+<title>Happy Birthday · 李芷贤 · 2026.10.11</title>
+<meta name="description" content="给李芷贤的生日礼物 · lizhixian1011" data-page-node-id="OJ4kHH9v52wKa7M9MDyU9t" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%82%3C/text%3E%3C/svg%3E" data-page-node-id="OPyoOn0nsTq8yXHuLjQlrC" />
+<link rel="stylesheet" href="css/style.css" data-page-node-id="0HpyyvqljcHDDxOBY3idKB" />
+</head>
+<body data-page-node-id="AwuTYKrY7lwVsBvQiuC1pT">
+
+<!-- ==================== 开始页：点一下再进 ==================== -->
+<div class="gate" id="gate">
+  <div class="gate-sky" aria-hidden="true"></div>
+  <div class="gate-inner">
+    <p class="gate-hi">Hi，芷贤</p>
+    <h2 class="gate-big" aria-label="Happy Birthday"><span>Happy</span> <span>Birthday</span></h2>
+    <p class="gate-sub">有一份礼物，想请你亲手拆开</p>
+    <button class="gate-btn" id="gateBtn" type="button">
+      <span class="gate-btn-ico" aria-hidden="true">&#127873;</span>
+      <span class="gate-btn-txt">点击进入</span>
+    </button>
+    <p class="gate-tip">建议打开声音 &#9834;</p>
+  </div>
+  <p class="gate-date">2026 &middot; 10 &middot; 11</p>
+</div>
+
+<!-- 背景：漂浮的星光粒子 -->
+<canvas id="bgCanvas" aria-hidden="true" data-page-node-id="PHwsnUf4MhdY59I1rCiJ1C"></canvas>
+<canvas id="fwCanvas" aria-hidden="true"></canvas>
+<div class="fire-veil" id="fireVeil" aria-hidden="true"></div>
+<div class="bg-aurora" aria-hidden="true" data-page-node-id="cvWHd9tkJVumniPaSKqa53">
+  <span class="blob b1" data-page-node-id="h4Wa7dDxq83YYzJamvb9nX"></span>
+  <span class="blob b2" data-page-node-id="GzI20Cb56Yx1y80beXSA30"></span>
+  <span class="blob b3" data-page-node-id="Rlmi96AEHAV38YanG5H6W8"></span>
+</div>
+
+<!-- ==================== 一、封面 ==================== -->
+<header class="hero" id="top" data-page-node-id="y6rJeJnkvm2jRpGKZXsPGj">
+  <div class="hero-inner" data-page-node-id="kB3bOt3jt6bOB4pCCSSFHx">
+
+    <p class="eyebrow reveal" data-page-node-id="1JPtj3hriCbHlDHs9LfnTV">给李芷贤</p>
+
+    <!-- 艺术字标题，字母由 JS 逐个渲染 -->
+    <h1 class="title-art" id="titleArt" aria-label="Happy Birthday" data-page-node-id="N11qLbZGpUL0cREMEGFpKB"></h1>
+
+    <!-- 日期：同款艺术字，尺寸明显小于标题 -->
+    <p class="date-art reveal">
+      <span class="digits">2026<i class="dot">.</i>10<i class="dot">.</i>11</span>
+    </p>
+
+    <div class="title-underline" aria-hidden="true" data-page-node-id="48R2KfuKgnpA5VhLAZjJBg">
+      <span data-page-node-id="0XNbN4YyHDzUuG5DAKfhHt"></span><i data-page-node-id="13KZn5AC6cEWQySeg07diQ">✧</i><span data-page-node-id="tvUpofvNU5goPRmEIJXUqN"></span>
+    </div>
+
+    <p class="hero-wish reveal" data-page-node-id="AQoJ7k1QvH5GKv9NpNjbrK">励志贤我们记得你</p>
+
+    <div class="hero-tags reveal" data-page-node-id="DNfNsZmbtTnFC0vj13kGBz">
+      <span class="tag" data-page-node-id="zALfYPzEPMoRcfXHQpZaYW">🎂 又长大一点点</span>
+      <span class="tag" data-page-node-id="lbsXmeTCTNqdSD7QIALCsB">🌙 愿你被温柔以待</span>
+      <span class="tag" data-page-node-id="dfTsPxDaX6XyrGHgapKLnK">💙 记得要开心</span>
+    </div>
+
+    <!-- 刘耀文元素：Q版头像贴纸 + 签名落款 -->
+    <div class="hero-sign reveal" data-page-node-id="Cr01BkFdnI5uqxKjJuyF0R">
+      <img class="sign-img" src="assets/sign.png" alt="刘耀文签名" data-page-node-id="N3oLCIlWkBbnlVUESHtrwG" loading="lazy" decoding="async" />
+      <span class="sign-cap" data-page-node-id="I1kxrcQJVxaBIUjmuEZc7g">with love ♡</span>
+    </div>
+
+    <div class="scroll-cue reveal" data-page-node-id="dHcaEMzmnHuX9uEiWSLdN8">
+      <span data-page-node-id="ZNMpKrBXYci9WaDSYsHlPL">往下滑，还有惊喜</span>
+      <i data-page-node-id="Qt8YWc0WhjTtPJfxZ6wEjU"></i>
+    </div>
+  </div>
+
+  <!-- 漂浮贴纸（刘耀文 Q 版形象） -->
+  <button class="sticker sticker-a" data-sticker title="戳一下～" aria-label="刘耀文头像贴纸" data-page-node-id="hBGkreEwQlPZfiEU1fC6MS">
+    <img src="assets/avatar.jpg" alt="刘耀文Q版头像" data-page-node-id="PBOtddwpN8eumCGzezSnhH" loading="lazy" decoding="async" />
+    <span class="sticker-ring" data-page-node-id="NUHka9OPcBUBPwkwFk8DqO"></span>
+  </button>
+  <button class="sticker sticker-b" data-sticker title="戳一下～" aria-label="刘耀文头像贴纸" data-page-node-id="s9fHvSIIfOPgCcklnYfr3v">
+    <img src="assets/avatar.jpg" alt="" data-page-node-id="Av42KRu9yra0KXbXQSxUJx" loading="lazy" decoding="async" />
+  </button>
+
+  <div class="hero-sparkles" aria-hidden="true" data-page-node-id="o0lkBsxHkPTFYYuVULBFVR">
+    <i style="--x:12%;--y:22%;--d:0s" data-page-node-id="t1x4Gan3ImUfXZIf1kBLzK">✧</i>
+    <i style="--x:86%;--y:16%;--d:.8s" data-page-node-id="nn7H5SiEl44Rru2nABvWoN">✦</i>
+    <i style="--x:8%;--y:72%;--d:1.6s" data-page-node-id="Q3z8sHwg9PMb0EGEufraic">✦</i>
+    <i style="--x:92%;--y:66%;--d:2.4s" data-page-node-id="BRHHlAIIQCK5MjBLFoidKI">✧</i>
+    <i style="--x:72%;--y:8%;--d:1.2s" data-page-node-id="Rv7ItkEimvsb8qvGD9pFOq">⋆</i>
+    <i style="--x:24%;--y:88%;--d:.4s" data-page-node-id="DTSX7LpLyvnkiAtYTSXKlf">⋆</i>
+  </div>
+</header>
+
+
+<!-- ==================== 二、19 岁生日展示 ==================== -->
+<section class="section b19-section" id="b19">
+  <div class="sec-head reveal">
+    <h2 class="sec-title">19 岁的生日展示</h2>
+    <p class="sec-sub">十九个秋天之后，派对还在继续</p>
+  </div>
+
+  <div class="b19-board reveal" role="img"
+       aria-label="19 岁生日拼贴展示板：两张照片、气球数字 19、线稿蛋糕、October 11 日历">
+
+    <div class="b19-confetti" aria-hidden="true">
+      <i style="--x:31%;--y:9%;--c:#ffd36e;--d:0s"></i>
+      <i style="--x:12%;--y:62%;--c:#ffb3d3;--d:.7s"></i>
+      <i style="--x:19%;--y:38%;--c:#93e6d0;--d:1.5s"></i>
+      <i style="--x:24%;--y:82%;--c:#b79cf7;--d:.3s"></i>
+      <i style="--x:31%;--y:14%;--c:#ffffff;--d:1.1s"></i>
+      <i style="--x:37%;--y:68%;--c:#ffd36e;--d:2.0s"></i>
+      <i style="--x:44%;--y:30%;--c:#ffb3d3;--d:.5s"></i>
+      <i style="--x:52%;--y:8%;--c:#93e6d0;--d:1.7s"></i>
+      <i style="--x:58%;--y:88%;--c:#b79cf7;--d:.9s"></i>
+      <i style="--x:64%;--y:46%;--c:#ffd36e;--d:2.3s"></i>
+      <i style="--x:70%;--y:20%;--c:#ffffff;--d:.2s"></i>
+      <i style="--x:78%;--y:72%;--c:#ffb3d3;--d:1.3s"></i>
+      <i style="--x:85%;--y:34%;--c:#93e6d0;--d:.6s"></i>
+      <i style="--x:91%;--y:58%;--c:#b79cf7;--d:1.9s"></i>
+      <i style="--x:95%;--y:86%;--c:#ffd36e;--d:1.0s"></i>
+      <i style="--x:9%;--y:90%;--c:#ffffff;--d:2.5s"></i>
+
+      <i class="sq" style="--x:11%;--y:44%;--c:#93e6d0;--d:.4s"></i>
+      <i class="sq" style="--x:15%;--y:24%;--c:#ffd36e;--d:1.6s"></i>
+      <i class="sq" style="--x:33%;--y:20%;--c:#ffb3d3;--d:.9s"></i>
+      <i class="sq" style="--x:57%;--y:12%;--c:#b79cf7;--d:2.2s"></i>
+      <i class="sq" style="--x:68%;--y:45%;--c:#ffd36e;--d:.2s"></i>
+      <i class="sq" style="--x:82%;--y:52%;--c:#93e6d0;--d:1.4s"></i>
+      <i class="sq" style="--x:36%;--y:66%;--c:#b79cf7;--d:2.6s"></i>
+      <i class="sq" style="--x:61%;--y:89%;--c:#ffb3d3;--d:.7s"></i>
+      <i class="sq" style="--x:88%;--y:74%;--c:#ffd36e;--d:1.9s"></i>
+      <i class="sq" style="--x:48%;--y:7%;--c:#ffffff;--d:.5s"></i>
+    </div>
+
+    <p class="b19-el b19-logo">Zhixian at 19</p>
+    <nav class="b19-el b19-links" aria-label="页面导航">
+      <a href="#top">Homepage</a>
+      <a href="#cake">The Cake</a>
+      <a href="#memory">The Record</a>
+      <a href="#notes">Guestbook</a>
+      <a href="#draw">Doodle</a>
+    </nav>
+
+    <span class="b19-el b19-washi b19-washi-a" aria-hidden="true"></span>
+    <span class="b19-el b19-washi b19-washi-b" aria-hidden="true"></span>
+    <span class="b19-el b19-washi b19-washi-c" aria-hidden="true"></span>
+    <span class="b19-el b19-washi b19-washi-d" aria-hidden="true"></span>
+
+    <i class="b19-el b19-spark" style="--x:21%;--y:31%;--d:.3s"></i>
+    <i class="b19-el b19-spark" style="--x:67%;--y:20%;--d:1.5s"></i>
+    <i class="b19-el b19-spark" style="--x:41%;--y:47%;--d:.9s"></i>
+    <i class="b19-el b19-spark" style="--x:74%;--y:12%;--d:2.1s"></i>
+    <i class="b19-el b19-spark" style="--x:18%;--y:57%;--d:1.2s"></i>
+    <i class="b19-el b19-spark" style="--x:68%;--y:62%;--d:.6s"></i>
+    <i class="b19-el b19-spark" style="--x:50%;--y:93%;--d:1.8s"></i>
+
+    <figure class="b19-el b19-polaroid b19-p1">
+      <span class="b19-tape" aria-hidden="true"></span>
+      <img src="assets/p19-glow.jpg" alt="2023 年 11 月 1 日的晚上，她举着两根荧光棒" loading="lazy" />
+      <figcaption>2023.11.01 · 荧光棒之夜</figcaption>
+    </figure>
+
+    <figure class="b19-el b19-polaroid b19-p2">
+      <span class="b19-tape" aria-hidden="true"></span>
+      <img src="assets/p19-phone.jpg" alt="靠在小店的木桌上喝饮料、看着手机" loading="lazy" />
+      <figcaption>下午三点 · 一杯饮料</figcaption>
+    </figure>
+
+
+    <div class="b19-el b19-van" aria-hidden="true">
+      <svg viewBox="0 0 96 46" fill="none" stroke="currentColor" stroke-width="2.5"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 32 V16 q0 -3 3 -3 H46 v19"/>
+        <path d="M46 32 V19 h14 q7 0 11 7 l6 6"/>
+        <path d="M9 32 H77"/>
+        <circle cx="24" cy="34" r="5.5"/><circle cx="61" cy="34" r="5.5"/>
+        <path d="M16 23 h20"/>
+        <circle cx="38" cy="11" r="4"/>
+      </svg>
+      <span class="b19-van-a">BIRTHDAY</span>
+      <span class="b19-van-b">DELIVERY</span>
+    </div>
+
+    <div class="b19-el b19-coin b19-coin1">
+      <img src="assets/p19-glow.jpg" alt="" loading="lazy" />
+      <span class="b19-coin-badge">19</span>
+    </div>
+
+    <div class="b19-el b19-coin b19-coin2">
+      <img src="assets/p19-phone.jpg" alt="" loading="lazy" />
+      <span class="b19-coin-badge">19</span>
+    </div>
+
+    <div class="b19-el b19-balloon" aria-label="19">19</div>
+
+<svg class="b19-el b19-neoncake" viewBox="0 0 400 440" fill="none"
+     stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <defs>
+        <radialGradient id="b19FlameGlow">
+          <stop offset="0" stop-color="#fff8d8" stop-opacity=".8"/>
+          <stop offset="1" stop-color="#ffe6a3" stop-opacity="0"/>
+        </radialGradient>
+        <g id="b19CakeInk">
+        <ellipse cx="200" cy="424" rx="112" ry="12"/>
+        <path d="M112 420 Q103 403 132 399 H268 Q297 403 288 420"/>
+        <path d="M187 399 V371 M213 399 V371"/>
+        <path d="M150 373 Q200 352 250 373"/>
+        <ellipse cx="200" cy="352" rx="150" ry="18"/>
+        <path d="M50 352 Q200 379 350 352"/>
+        <path d="M68 258 V326 Q68 344 86 344 H314 Q332 344 332 326 V258"/>
+        <ellipse cx="200" cy="258" rx="132" ry="17"/>
+        <path d="M70 268 q13 18 26 0 q13 11 26 0 q13 22 26 0 q13 13 26 0 q13 20 26 0 q13 11 26 0 q13 18 26 0 q13 14 26 0 q13 22 26 0 q13 12 26 0"/>
+        <circle cx="92" cy="344" r="2.6" fill="currentColor" stroke="none"/>
+        <circle cx="114" cy="344" r="2.6" fill="currentColor" stroke="none"/>
+        <circle cx="136" cy="344" r="2.6" fill="currentColor" stroke="none"/>
+        <circle cx="158" cy="344" r="2.6" fill="currentColor" stroke="none"/>
+        <circle cx="180" cy="344" r="2.6" fill="currentColor" stroke="none"/>
+        <circle cx="202" cy="344" r="2.6" fill="currentColor" stroke="none"/>
+        <circle cx="224" cy="344" r="2.6" fill="currentColor" stroke="none"/>
+        <circle cx="246" cy="344" r="2.6" fill="currentColor" stroke="none"/>
+        <circle cx="268" cy="344" r="2.6" fill="currentColor" stroke="none"/>
+        <circle cx="290" cy="344" r="2.6" fill="currentColor" stroke="none"/>
+        <path d="M104 306 q9 -15 21 -6 q9 8 -3 13 q-9 3 -7 -8"/>
+        <path d="M296 302 q-9 -15 -21 -6 q-9 8 3 13 q9 3 7 -8"/>
+        <text x="200" y="326" text-anchor="middle" font-size="36" font-weight="800" font-family="'Baloo 2','Arial Rounded MT Bold','PingFang SC',system-ui,sans-serif" fill="none" stroke="currentColor" stroke-width="2.9" letter-spacing="0">19</text>
+        <path d="M102 196 V234 Q102 250 118 250 H282 Q298 250 298 234 V196"/>
+        <ellipse cx="200" cy="196" rx="98" ry="14"/>
+        <path d="M104 206 q12 15 24 0 q12 9 24 0 q12 18 24 0 q12 11 24 0 q12 16 24 0 q12 9 24 0 q12 15 24 0 q12 12 24 0"/>
+        <circle cx="124" cy="250" r="2.4" fill="currentColor" stroke="none"/>
+        <circle cx="150" cy="250" r="2.4" fill="currentColor" stroke="none"/>
+        <circle cx="176" cy="250" r="2.4" fill="currentColor" stroke="none"/>
+        <circle cx="202" cy="250" r="2.4" fill="currentColor" stroke="none"/>
+        <circle cx="228" cy="250" r="2.4" fill="currentColor" stroke="none"/>
+        <circle cx="254" cy="250" r="2.4" fill="currentColor" stroke="none"/>
+        <path d="M256 214 q12 4 12 14 q0 12 -12 19 q-12 -7 -12 -19 q0 -10 12 -14z"/>
+        <path d="M250 214 q6 -7 12 0 q-6 6 -12 0z"/>
+        <path d="M148 210 q0 -8 7 -10 q7 2 7 10 q0 8 -7 12 q-7 -4 -7 -12z"/>
+        <path d="M188 218 l2.6 6.6 7 .6 -5.3 4.6 1.6 6.9 -5.9 -3.6 -5.9 3.6 1.6 -6.9 -5.3 -4.6 7 -.6z"/>
+        <path d="M124 232 q8 -6 14 0"/>
+        <path d="M138 138 V176 Q138 190 152 190 H248 Q262 190 262 176 V138"/>
+        <ellipse cx="200" cy="138" rx="62" ry="11"/>
+        <path d="M140 147 q12 13 24 0 q12 8 24 0 q12 15 24 0 q12 9 24 0 q12 13 24 0"/>
+        <circle cx="154" cy="190" r="2.2" fill="currentColor" stroke="none"/>
+        <circle cx="178" cy="190" r="2.2" fill="currentColor" stroke="none"/>
+        <circle cx="202" cy="190" r="2.2" fill="currentColor" stroke="none"/>
+        <circle cx="226" cy="190" r="2.2" fill="currentColor" stroke="none"/>
+        <path d="M164 138 V90"/><path d="M200 138 V76"/><path d="M236 138 V94"/>
+        <path d="M164 126 l7 -5 M164 116 l7 -5 M164 106 l7 -5"/>
+        <path d="M236 130 l-7 -5 M236 120 l-7 -5 M236 110 l-7 -5"/>
+        <path d="M200 96 l8 -6 M200 86 l8 -6"/>
+        <path d="M164 90 v-5"/><path d="M200 76 v-5"/><path d="M236 94 v-5"/>
+        <path d="M164 85 q8 -10 0 -21 q-8 11 0 21z"/>
+        <path d="M200 71 q9 -11 0 -24 q-9 13 0 24z"/>
+        <path d="M236 89 q8 -10 0 -21 q-8 11 0 21z"/>
+        <path d="M200 66 q4 -5 0 -11"/>
+        <circle cx="296" cy="330" r="9"/><circle cx="313" cy="323" r="6.6"/><circle cx="282" cy="320" r="6"/>
+        <path d="M292 311 q11 -9 20 -1 q-9 10 -20 1z"/>
+        <path d="M296 326 l9 -4 M313 319 l-8 -6"/>
+        <circle cx="146" cy="126" r="8"/><circle cx="133" cy="119" r="5.6"/><circle cx="158" cy="117" r="5.4"/>
+        <path d="M146 113 q-10 -9 -20 -2 q9 10 20 2z"/>
+        <circle cx="76" cy="286" r="7"/><circle cx="64" cy="279" r="5"/><circle cx="90" cy="278" r="4.8"/>
+        <path d="M70 270 q-9 -8 -18 -1 q8 9 18 1z"/>
+        <path d="M268 258 l2.4 6 6.4 .5 -4.8 4.2 1.4 6.3 -5.4 -3.3 -5.4 3.3 1.4 -6.3 -4.8 -4.2 6.4 -.5z"/>
+        <path d="M120 168 l2.4 6 6.4 .5 -4.8 4.2 1.4 6.3 -5.4 -3.3 -5.4 3.3 1.4 -6.3 -4.8 -4.2 6.4 -.5z"/>
+        <path d="M326 232 q7 -6 12 0"/>
+        <path d="M100 272 l9 -5 M105 281 l9 -5"/>
+        <path d="M116 290 l9 -5 M121 299 l9 -5"/>
+        <path d="M160 296 l9 -5 M165 305 l9 -5"/>
+        <path d="M176 284 l9 -5 M181 293 l9 -5"/>
+        <path d="M212 300 l9 -5 M217 309 l9 -5"/>
+        <path d="M228 288 l9 -5 M233 297 l9 -5"/>
+        <path d="M250 296 l9 -5 M255 305 l9 -5"/>
+        <path d="M266 282 l9 -5 M271 291 l9 -5"/>
+        <path d="M288 262 l9 -5 M293 271 l9 -5"/>
+        <path d="M140 262 l9 -5 M145 271 l9 -5"/>
+        <path d="M196 262 l9 -5 M201 271 l9 -5"/>
+        </g>
+      </defs>
+      <g class="b19-cake-wash">
+        <path d="M68 258 V326 Q68 344 86 344 H314 Q332 344 332 326 V258 Z"/>
+        <path d="M102 196 V234 Q102 250 118 250 H282 Q298 250 298 234 V196 Z"/>
+        <path d="M138 138 V176 Q138 190 152 190 H248 Q262 190 262 176 V138 Z"/>
+        <ellipse cx="200" cy="352" rx="150" ry="18"/>
+      </g>
+      <circle cx="164" cy="76" r="18" fill="url(#b19FlameGlow)" stroke="none"/>
+      <circle cx="200" cy="61" r="21" fill="url(#b19FlameGlow)" stroke="none"/>
+      <circle cx="236" cy="80" r="18" fill="url(#b19FlameGlow)" stroke="none"/>
+      <use href="#b19CakeInk" class="b19-ink-2"/>
+      <use href="#b19CakeInk" class="b19-ink-1"/>
+    </svg>
+
+
+    <div class="b19-el b19-post">
+      <span class="b19-post-skin" aria-hidden="true"></span>
+      <img src="assets/p19-glow.jpg" alt="" loading="lazy" />
+      <span class="b19-post-val">19</span>
+      <span class="b19-post-cap">POSTAGE</span>
+      <svg class="b19-postmark" viewBox="0 0 130 78" fill="none" aria-hidden="true">
+        <circle cx="30" cy="34" r="21" stroke="currentColor" stroke-width="1.8" opacity=".62"/>
+        <circle cx="30" cy="34" r="15" stroke="currentColor" stroke-width="1" opacity=".5" stroke-dasharray="3 3"/>
+        <text x="30" y="39" text-anchor="middle" font-size="14" font-weight="800" fill="currentColor" stroke="none" opacity=".62">19</text>
+        <path d="M58 22 q8 -7 16 0 q8 7 16 0" stroke="currentColor" stroke-width="1.7" opacity=".55"/>
+        <path d="M60 34 q8 -7 16 0 q8 7 16 0" stroke="currentColor" stroke-width="1.7" opacity=".55"/>
+        <path d="M62 46 q8 -7 16 0 q8 7 16 0" stroke="currentColor" stroke-width="1.7" opacity=".55"/>
+      </svg>
+    </div>
+
+    <p class="b19-el b19-script">Happy<br>Birthday</p>
+
+    <div class="b19-el b19-card b19-file">
+      <div class="b19-file-head">SPECIAL EDITION</div>
+      <ul>
+        <li><span>NAME</span><b>李芷贤</b></li>
+        <li><span>DATE</span><b>10 · 11</b></li>
+        <li><span>AGE</span><b>19</b></li>
+        <li><span>SIGN</span><b>天秤座</b></li>
+        <li><span>SINCE</span><b>2007</b></li>
+      </ul>
+    </div>
+
+
+    <div class="b19-el b19-ticket">
+      <div class="b19-tk-main">
+        <span class="b19-tk-top">ADMIT ONE</span>
+        <b>19</b>
+        <span class="b19-tk-sub">OCT · 11 · 2026</span>
+      </div>
+      <div class="b19-tk-stub">
+        <span>NO.</span>
+        <b>1011</b>
+      </div>
+    </div>
+
+    <div class="b19-el b19-card b19-wish">
+      <p class="b19-wish-t">生日愿望 <span class="b19-flames" aria-hidden="true"><i></i><i></i><i></i></span></p>
+      <div class="b19-wish-l wish-edit" id="wishEdit" contenteditable="true" role="textbox"
+           spellcheck="false" aria-label="写下你的生日愿望" data-empty="1"
+           data-ph="点这里，写下你的愿望…"></div>
+      <p class="b19-wish-tip" aria-hidden="true">✎ 可以自己写哦</p>
+    </div>
+
+    <div class="b19-el b19-card b19-cal">
+      <span class="b19-note-tape b19-note-tape-a" aria-hidden="true"></span>
+      <span class="b19-note-tape b19-note-tape-b" aria-hidden="true"></span>
+      <div class="b19-cal-head">October</div>
+      <div class="b19-cal-sub">2026</div>
+      <div class="b19-cal-grid">
+        <span class="wd">S</span><span class="wd">M</span><span class="wd">T</span><span class="wd">W</span><span class="wd">T</span><span class="wd">F</span><span class="wd">S</span>
+        <span class="dd pad"></span><span class="dd pad"></span><span class="dd pad"></span><span class="dd pad"></span><span class="dd">01</span><span class="dd">02</span><span class="dd">03</span>
+        <span class="dd">04</span><span class="dd">05</span><span class="dd">06</span><span class="dd">07</span><span class="dd">08</span><span class="dd">09</span><span class="dd">10</span>
+        <span class="dd on">11<svg class="b19-cir" viewBox="0 0 210 200" fill="none" aria-hidden="true">
+            <path d="M156 25 C 120 6, 58 11, 30 45 C 6 75, 12 147, 52 175 C 92 203, 169 191, 191 149 C 209 113, 197 53, 159 25 C 147 16, 131 13, 117 15" stroke="#ffc24d" stroke-width="15"/>
+            <path d="M150 41 C 118 27, 68 31, 46 59 C 26 85, 32 143, 66 165 C 100 187, 159 177, 177 143" stroke="#ffe6a3" stroke-width="7" opacity=".85"/>
+          </svg></span><span class="dd">12</span><span class="dd">13</span><span class="dd">14</span><span class="dd">15</span><span class="dd">16</span><span class="dd">17</span>
+        <span class="dd">18</span><span class="dd">19</span><span class="dd">20</span><span class="dd">21</span><span class="dd">22</span><span class="dd">23</span><span class="dd">24</span>
+        <span class="dd">25</span><span class="dd">26</span><span class="dd">27</span><span class="dd">28</span><span class="dd">29</span><span class="dd">30</span><span class="dd">31</span>
+      </div>
+    </div>
+
+    <div class="b19-el b19-oval"><span>BIRTHDAY</span><b>19</b></div>
+
+    <div class="b19-el b19-pennant"><span>♥ 19</span></div>
+
+    <p class="b19-el b19-stamp">十九岁 · 请多指教</p>
+
+    <p class="b19-el b19-caption">19 个秋天 · 从 2007 走到 2026<br><span>AND THE PARTY IS STILL GOING.</span></p>
+  </div>
+</section>
+
+
+<!-- ==================== 三、3D 蛋糕 · 点亮蜡烛 ==================== -->
+<section class="section cake-section" id="cake" data-page-node-id="pSE2B72VBjcoJpEXtn97oZ">
+  <div class="sec-head reveal" data-page-node-id="Y0Hg5wCPp8NrJCdNAW1xHQ">
+    <h2 class="sec-title" data-page-node-id="Yug0BBcwAoxoSjM2E3b0iv">属于她的大蛋糕</h2>
+    <p class="sec-sub" data-page-node-id="f6kzaPsb2EdWcX2PPWQPN0">轻轻点亮蜡烛，愿望会被听见 ✧</p>
+  </div>
+
+  <div class="cake-stage" id="cakeStage" data-page-node-id="jdszWcYHXpCnxHDVK9EkuH">
+    <div class="cake-glow" id="cakeGlow" aria-hidden="true" data-page-node-id="hauAFFL7cCjkZxhXS5ZDhx"></div>
+    <div class="cake-spin" id="cakeSpin" aria-hidden="true" data-page-node-id="tFH7LsMau9mBnZEJrvmyMc"></div>
+    <div class="cake-num" id="cakeNum" aria-hidden="true"></div>
+    <div class="cake-floor" aria-hidden="true" data-page-node-id="lSh8pa5N5G80SkpJTiBwIn"></div>
+    <div class="fx-layer" id="fxLayer" aria-hidden="true" data-page-node-id="foDjk9eZtD6OD8U1G7cwHh"></div>
+  </div>
+
+  <div class="light-panel reveal" data-page-node-id="gEpqjKwGzToOV7kfrSDrzT">
+    <button class="btn btn-wish" id="wishBtn" type="button">
+      <span class="btn-ico">✨</span>
+      <span class="btn-txt">许愿</span>
+    </button>
+
+    <button class="btn btn-light" id="lightBtn" data-page-node-id="1vhXmF0rgs3O9cNcXGDXB4">
+      <span class="btn-ico" data-page-node-id="SocPyjCcEIr0nTN9IbCqNU">🕯️</span>
+      <span class="btn-txt" data-page-node-id="IeDq3HGhzcEmJOoHhRgrAa">为她点亮蜡烛</span>
+    </button>
+
+    <button class="btn btn-blow" id="blowBtn" type="button" hidden>
+      <span class="btn-ico">💨</span>
+      <span class="btn-txt">吹蜡烛</span>
+    </button>
+
+    <p class="wish-hint" id="wishHint" hidden>闭上眼睛，为 19 岁的自己许一个愿 ✧</p>
+
+    <div class="counter-box" data-page-node-id="X21JQj83oonZSpCnKQAavZ">
+      <div class="counter-num" data-page-node-id="NarxHYGaObXOx94IvkGHzI"><b id="lightCount" data-page-node-id="0dlo7gGZEXeesuE4E0WSfE">0</b></div>
+      <div class="counter-label" data-page-node-id="jZ8Jt4PI20cs59mZDD3bFE">已经为她点亮 <em data-page-node-id="C0tSPbWwBN5e9Eia29FesM">·</em> 次数不限，点几次都是爱</div>
+    </div>
+
+    <p class="light-tip" id="lightTip" data-page-node-id="P1NTZjz9EIjia4Q08FZWWE">每一次点亮，都是一句「生日快乐」♡</p>
+  </div>
+
+  <!-- 蛋糕 DIY：大家一起来装饰 -->
+  <div class="diy reveal" id="diyPanel">
+    <div class="diy-head">
+      <h3>一起来装饰这个蛋糕 🧁</h3>
+      <p>挑一个放上去 —— 放完点一下它，就知道是谁加的啦</p>
+    </div>
+
+    <div class="diy-row">
+      <label for="diyName">署名</label>
+      <input id="diyName" maxlength="10" placeholder="你的名字（可不填）" autocomplete="off" />
+      <button class="diy-undo" id="diyUndo" type="button">撤销上一个</button>
+    </div>
+
+    <div class="diy-grid" id="diyGrid"></div>
+
+    <p class="diy-tip">已经放了 <b id="diyCount">0</b> 个装饰 · 装饰只保存在你自己的浏览器里</p>
+  </div>
+</section>
+
+
+<!-- ==================== 四、回忆放映机 ==================== -->
+<section class="section memory-section" id="memory" data-page-node-id="rOdr2P1Tm2MvpJFPwejP5f">
+  <div class="sec-head reveal" data-page-node-id="wuSvvNw6FyqgRWrV6qCrsI">
+    <h2 class="sec-title" data-page-node-id="TDu5teLaVP8qH4bDmnL8oa">回忆放映机</h2>
+    <p class="sec-sub" data-page-node-id="x6vMdsqAaurmurvDEfng9b">一张一张，像回忆一样浮现 —— 这一张在眼前，下一张已经在前面准备好</p>
+  </div>
+
+  <div class="projector reveal" data-page-node-id="rlGZxfu9FssbyRFTipwuOE">
+    <div class="slide-window" id="slideWindow" data-page-node-id="C7llcRTZ4m7h193XVcLNwH">
+      <div class="slide-deck" id="slideDeck" data-page-node-id="Qu9LmMCzxR1f9KM6SnDpJh"></div>
+      <div class="slide-vignette" aria-hidden="true" data-page-node-id="yXcIFaOhxGHb5BFTGGIhCR"></div>
+      <div class="slide-dust" aria-hidden="true" data-page-node-id="HYQDOBcc8qB16ljUNKGFvB"></div>
+    </div>
+
+    <div class="slide-bar" data-page-node-id="y7UnCr5HkouWLDeslnLiHB">
+      <div class="slide-caption" id="slideCaption" data-page-node-id="BjMwXjGbojYIzMDwSx1uoo">—</div>
+      <div class="film-progress" data-page-node-id="HDEyaLeEhJKmbVnAN9U0zg"><i id="filmBar" data-page-node-id="K4dA4r5oDX9nsuEtVfqkej"></i></div>
+    </div>
+
+    <div class="slide-ctrl" data-page-node-id="YZvVSPqAtnp0xcYdFmjSnn">
+      <button class="ctrl-btn" data-act="prev" aria-label="上一张" data-page-node-id="lIMQWM5QCbDZv87BdHtS90">‹</button>
+      <button class="ctrl-btn wide" data-act="toggle" id="playBtn" data-page-node-id="WHbbs5zA0HXa61V1LjvlDp">暂停</button>
+      <button class="ctrl-btn" data-act="next" aria-label="下一张" data-page-node-id="FNB70YBDDpIIH9RAFLlW64">›</button>
+      <label class="ctrl-btn wide upload-btn" data-page-node-id="bqQ4QnNgoUQqgNyR33bxow">
+        ＋ 添加照片
+        <input type="file" id="fileInput" accept="image/*" multiple hidden data-page-node-id="aA803ZJ3J68CuGBJEBHLNv" />
+      </label>
+      <button class="ctrl-btn" data-act="reset" id="resetBtn" data-page-node-id="CfhYaRQ08ePfCqTLXLv5Dh">恢复默认</button>
+    </div>
+    <p class="slide-hint" id="slideHint" data-page-node-id="7x6wLBME4dckehDPNnUR13">支持一次选多张 —— 你上传的照片只会保存在本机浏览器里，别人看不到 :)</p>
+  </div>
+</section>
+
+
+<!-- ==================== 五、便签留言墙 ==================== -->
+<section class="section note-section" id="notes" data-page-node-id="tRCQ53Pr2IwKwpt1p9jY4r">
+  <div class="sec-head reveal" data-page-node-id="rAGbAgcv1HICrSiuvNvb9n">
+    <h2 class="sec-title" data-page-node-id="uK7VGEaCLWz4MPy2kxVOs7">祝福便签墙</h2>
+    <p class="sec-sub" data-page-node-id="IHskGLqqXL2wPWO9WiC6yZ">挑一张喜欢的便签，把想说的话写上去，贴给她看</p>
+  </div>
+
+  <div class="note-editor reveal" data-page-node-id="TY1G1WHbbahoBaIg7uYo3O">
+    <div class="editor-left" data-page-node-id="Zc17DTSN3ZliXXt048tljI">
+      <textarea id="noteText" maxlength="120" placeholder="写一句想对她说的话…（比如：生日快乐，永远做闪闪发光的自己）"></textarea>
+      <div class="editor-row" data-page-node-id="yYFaDulHEwUON4aWoZYu1t">
+        <input id="noteName" maxlength="12" placeholder="署名（可不填）" data-page-node-id="0JNmLFR7fQa0CU0vtRiOPA" />
+        <span class="char-count" data-page-node-id="B7noV19jYU179B7ijRfCBj"><b id="charNow" data-page-node-id="npoctIXuFZbt8CLy7xVPcc">0</b>/120</span>
+      </div>
+    </div>
+
+    <div class="editor-right" data-page-node-id="PnbKXYjQeIG5dW3lHhlGTY">
+      <div class="pick-line" data-page-node-id="HFe66RAAUHZGjg56O54nAh">
+        <label data-page-node-id="2iCMNM4qm7RH5ZtcNsRkxF">颜色</label>
+        <div class="swatches" id="pickColor" data-page-node-id="2QJgxmW0euupvKjSBOE00C"></div>
+      </div>
+      <div class="pick-line" data-page-node-id="8wDYLFjdrymeWSPDM8LcgE">
+        <label data-page-node-id="Qn2Fjh3tywCQOQOb1qwCVt">形状</label>
+        <div class="chips" id="pickShape" data-page-node-id="Fe5DoVzDRavNPSA7kO2UcB"></div>
+      </div>
+      <div class="pick-line" data-page-node-id="RoeoxhPLqHCiSB4Dpun5Nx">
+        <label data-page-node-id="iOey6cqf7azbvzrMyu6EtF">材质</label>
+        <div class="chips" id="pickMat" data-page-node-id="1MmjnAnsFMihSOV6BtISR4"></div>
+      </div>
+      <div class="preview-line" data-page-node-id="zJpnpcPUtOsSKQrjFAcCpA">
+        <label data-page-node-id="KWcneCYeInygMgZDMANs5G">预览</label>
+        <div class="note-preview" id="notePreview" data-page-node-id="uqf09QL6ru4W5xIp48o4ih"></div>
+      </div>
+      <button class="btn btn-light btn-note" id="noteAdd" data-page-node-id="xjqHvlXrZSwya4bHIWB4Wb">贴上便签 ✦</button>
+    </div>
+  </div>
+
+  <div class="note-wall" id="noteWall" data-page-node-id="D4QqIc2tVEDityvo7rUfAd"></div>
+  <p class="note-empty" id="noteEmpty" hidden data-page-node-id="UfB6ax6U8dTKpDYYb3g8cv">墙上还空着，来做第一个留言的人吧 ✎</p>
+</section>
+
+
+<!-- ==================== 六、涂鸦画板 ==================== -->
+<section class="section draw-section" id="draw">
+  <div class="sec-head reveal">
+    <h2 class="sec-title">一起涂鸦</h2>
+    <p class="sec-sub">想画什么就画什么 —— 画完会留在这里，下次打开还在</p>
+  </div>
+
+  <div class="board reveal">
+    <div class="board-tools">
+      <div class="tool-line">
+        <span class="tool-label">笔刷</span>
+        <div class="chips" id="brushList"></div>
+      </div>
+      <div class="tool-line">
+        <span class="tool-label">颜色</span>
+        <div class="swatches" id="penColors"></div>
+      </div>
+      <div class="tool-line">
+        <span class="tool-label">粗细</span>
+        <input type="range" id="penSize" min="2" max="44" step="1" value="8" />
+        <span class="tool-size" id="sizeNow">8</span>
+      </div>
+      <div class="tool-acts">
+        <button class="ctrl-btn" id="drawUndo" type="button">撤销</button>
+        <button class="ctrl-btn" id="drawClear" type="button">清空我的</button>
+        <button class="ctrl-btn" id="drawSave" type="button">保存图片</button>
+      </div>
+      <p class="board-tip">画的内容只保存在你自己的浏览器里，下次打开还能看到 · 「清空我的」只清掉你画的，不动别人画的 ✎</p>
+    </div>
+
+    <div class="board-canvas-wrap">
+      <canvas id="board" aria-label="涂鸦画板"></canvas>
+      <span class="board-hint" id="boardHint">在这里画点什么吧 ✎</span>
+    </div>
+  </div>
+</section>
+
+
+<!-- ==================== 页脚 ==================== -->
+<footer class="site-foot" data-page-node-id="pda0stSUEAtAgQKPrdZxtg">
+  <img class="foot-sign" src="assets/sign.png" alt="刘耀文签名" data-page-node-id="ilTBlLaDuKiV4w7J7AcGpF" loading="lazy" decoding="async" />
+  <p class="foot-line" data-page-node-id="hDFbqXYaja92oNWapG9FX0">Happy Birthday, 李芷贤 · 2026.10.11</p>
+  <p class="foot-sub" data-page-node-id="vouveH39XUlel6hmsVBoYv">网址里的 <b data-page-node-id="GJCSG5XvQU6RHAOeQi4SUB">lizhixian1011</b> 就是你 —— 10 月 11 日的小朋友</p>
+  <p class="foot-meta" data-page-node-id="HGlQJNGXM5l9vpJvYLGsGr">Made with ♡ · 所有点亮次数与留言都保存在你自己的浏览器里</p>
+  <p class="foot-credit">制作人 <b>DHQ</b><i>·</i>总监 <b>ZQ</b></p>
+</footer>
+
+<!-- 背景音乐开关（开始页点过之后才出现） -->
+<button class="bgm-btn" id="bgmBtn" type="button" aria-label="背景音乐开关" aria-pressed="false" hidden>
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M4.2 9.4h3.1l4.4-3.6v12.4L7.3 14.6H4.2z" fill="currentColor"/>
+    <path class="bgm-wave" d="M15.4 8.4a5.1 5.1 0 0 1 0 7.2" stroke="currentColor" stroke-width="1.9"
+          stroke-linecap="round" fill="none"/>
+    <path class="bgm-wave" d="M18.3 5.5a8.8 8.8 0 0 1 0 13" stroke="currentColor" stroke-width="1.9"
+          stroke-linecap="round" fill="none" opacity=".55"/>
+  </svg>
+</button>
+
+<!-- 许愿时压住整页的深色幕布（蛋糕区会被抬到幕布之上） -->
+<div class="wish-veil" id="wishVeil" aria-hidden="true"></div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" data-page-node-id="uG9DR1VJlGj79hkclSP42r"></div>
+
+<script src="js/bgm.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
