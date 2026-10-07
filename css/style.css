@@ -3318,3 +3318,15 @@ body.gate-lock { overflow: hidden; height: 100%; touch-action: none; }
     min-height: 430px;
   }
 }
+
+/* =========================================================
+   共享记忆：计数器下面那行「大家都能看到」的状态
+   ========================================================= */
+.counter-shared {
+  margin: 10px 0 0;
+  font-size: clamp(11.5px, 1.5vw, 13.5px);
+  letter-spacing: .04em;
+  color: var(--ink-faint);
+  transition: color .3s ease;
+}
+.counter-shared.warn { color: #d98324; }

@@ -175,10 +175,23 @@
       rise: rise, t: 0, tone: tone, kind: kind,
       big: big === undefined ? Math.random() < 0.3 : big
     });
+    /* 升空的「咻」：rise 是帧数（60fps 计），除 60 得到秒 —— 音画才对得上。
+       弱机就不放了，省一点算力，爆裂声还在。 */
+    if (!PERF.low) fwSoundWhoosh(rise / 60);
+  }
+
+  /* 音效包装：声音引擎是独立文件，判一下存在再用，缺了也不影响烟花 */
+  function fwSoundWhoosh(sec) {
+    if (window.LZX_BGM && window.LZX_BGM.whoosh) window.LZX_BGM.whoosh(sec);
+  }
+  function fwSoundBoom(tone, big) {
+    if (window.LZX_BGM && window.LZX_BGM.boom) window.LZX_BGM.boom(!!big, tone);
   }
 
   /* 炸开：按型号生成。粒子少而精，靠速度和寿命把范围铺开 */
   function fwBurst(x, y, tone, big, kind) {
+    /* 和视觉爆炸同一帧触发，声音才「贴在」爆炸上 */
+    fwSoundBoom(tone, big);
     kind = kind || FW_KINDS[(Math.random() * FW_KINDS.length) | 0];
     const spec = FW_SPEC[kind] || FW_SPEC.peony;
     const sprite = fwSprites[tone] || fwSprites[0];
@@ -855,15 +868,38 @@
     const slot = freeSlot();
     const nameEl = $('#diyName');
     const from = nameEl && nameEl.value.trim() ? nameEl.value.trim().slice(0, 10) : '';
-    diyItems.push({
+    const item = {
       id: 'd' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36),
       k: kind, a: slot.a, R: slot.R, y: slot.y, from: from
-    });
+    };
+    diyItems.push(item);
     store.set(DIY_KEY, diyItems);
     renderDecos();
     const def = DECOS.filter(x => x.k === kind)[0];
     const nm = def ? def.n : '装饰';
     toast(from ? ('「' + from + '」放了一个' + nm + ' ✦') : ('放好了一个' + nm + ' ✦'));
+    syncDecoUp(item);
+  }
+
+  /* 把刚放的装饰送到服务器 —— 这样别人打开也能看到 */
+  function syncDecoUp(item) {
+    if (!window.LZX_API) return;
+    LZX_API.addDeco(item).then(d => {
+      if (!d) return;
+      if (d.ok && Array.isArray(d.deco)) { diyItems = d.deco; renderDecos(); }
+      else if (d.err === 'full') { toast('蛋糕上已经放满啦 🙈'); syncDecos(); }
+    });
+  }
+
+  /* 拉取服务器上的装饰（大家放的都在这里） */
+  function syncDecos() {
+    if (!window.LZX_API) return;
+    LZX_API.state().then(d => {
+      if (d && d.ok && Array.isArray(d.deco) && d.deco.length) {
+        diyItems = d.deco;
+        renderDecos();
+      }
+    });
   }
 
   function initDiy() {
@@ -886,12 +922,28 @@
 
     const undo = $('#diyUndo');
     if (undo) {
+      /* 装饰现在是大家共用的，所以「撤销」只能撤自己放的那个
+         （和涂鸦画板同一个规矩：别人的东西不许动） */
       undo.addEventListener('click', () => {
         if (!diyItems.length) { toast('还没有放装饰呢～'); return; }
-        diyItems.pop();
-        store.set(DIY_KEY, diyItems);
+        const me = window.LZX_API ? LZX_API.visitor() : null;
+        let k = -1;
+        for (let j = diyItems.length - 1; j >= 0; j--) {
+          const it = diyItems[j];
+          if (!it.by || it.by === me) { k = j; break; }
+        }
+        if (k < 0) { toast('这些装饰都是别人放的，不能替他们撤哦～'); return; }
+        const gone = diyItems[k];
+        diyItems.splice(k, 1);
         renderDecos();
-        toast('已撤掉最后一个装饰');
+        if (window.LZX_API && gone.by) {
+          LZX_API.removeDeco(gone.id).then(d => {
+            if (d && d.ok && Array.isArray(d.deco)) { diyItems = d.deco; renderDecos(); }
+          });
+        } else {
+          store.set(DIY_KEY, diyItems);
+        }
+        toast('已撤掉你放的那个装饰');
       });
     }
 
@@ -913,6 +965,7 @@
     }
 
     renderDecos();
+    syncDecos();
   }
 
   /* 蜡烛（简化：上层顶面正中间只留一根） */
@@ -1069,9 +1122,44 @@
   let litCount = 0;
   const LIGHT_KEY = 'lzx_light_count';
 
+  /* ---------- 共享计数：所有人的点亮次数汇总在服务器上 ----------
+     大数字显示「大家一共点了多少次」，所以下一个人打开时能看到数字变大。 */
+  let gCandles = 0, gHosts = 0, gLoaded = false;
+
+  function shownCount() {
+    return (gLoaded && window.LZX_API && LZX_API.isOnline() !== false) ? gCandles : litCount;
+  }
+
+  function renderShared() {
+    const el = $('#lightShared');
+    if (!el) return;
+    if (window.LZX_API && LZX_API.isOnline() === false) {
+      el.textContent = '本机模式 · 暂时连不上服务器，现在只有你自己看得到';
+      el.classList.add('warn');
+      return;
+    }
+    el.classList.remove('warn');
+    el.textContent = '已有 ' + gHosts + ' 位朋友为她点亮 · 你自己点了 ' + litCount + ' 次 · 所有人都能看到 ✦';
+  }
+
+  function syncCandles() {
+    if (!window.LZX_API) return;
+    LZX_API.state().then(d => {
+      if (d && d.ok) {
+        gCandles = d.candles || 0;
+        gHosts = d.hosts || 0;
+        gLoaded = true;
+        /* 本机点过但还没同步上去的，先按本机数算，别让数字往回跳 */
+        if (litCount > gCandles) gCandles = litCount;
+        renderCount(false);
+      }
+      renderShared();
+    });
+  }
+
   function renderCount(bump) {
     if (!lightNum) return;
-    lightNum.textContent = litCount;
+    lightNum.textContent = shownCount();
     if (bump) {
       lightNum.classList.remove('bump');
       void lightNum.offsetWidth;
@@ -1110,6 +1198,18 @@
     litCount++;
     store.set(LIGHT_KEY, litCount);
     renderCount(true);
+    /* 同步到服务器 —— 所有人都会看到这个数字变大 */
+    if (window.LZX_API) {
+      LZX_API.candle().then(d => {
+        if (d && d.ok) {
+          gCandles = Math.max(gCandles, d.candles || 0);
+          gHosts = d.hosts || 0;
+          gLoaded = true;
+          renderCount(false);
+        }
+        renderShared();
+      });
+    }
 
     const idx = Math.min(litCount - 1, candles.length - 1);
     if (candles[idx]) candles[idx].el.classList.add('is-lit');
@@ -1145,6 +1245,8 @@
       if (litCount >= candles.length && stage) stage.classList.add('lit');
     }
     renderCount(false);
+    renderShared();
+    syncCandles();
 
     if (lightBtn) lightBtn.addEventListener('click', lightUp);
 
@@ -1377,6 +1479,7 @@
   const slideHint = $('#slideHint');
 
   let gallery = store.get(GAL_KEY, []) || [];
+  let shared = [];        /* 大家上传到服务器上的照片 */
   let items = [];
   let cells = [];
   let iPrev = 0, iCur = 1, iNext = 2;
@@ -1386,8 +1489,34 @@
   const DUR = 4800;
 
   function buildItems() {
-    items = gallery.concat(DEFAULT_ITEMS);
+    /* 顺序：大家上传的 → 你自己加的 → 内置的几张 */
+    items = shared.concat(gallery).concat(DEFAULT_ITEMS);
     if (!items.length) items = DEFAULT_ITEMS.slice();
+  }
+
+  /* 从服务器把大家上传的照片拉下来 */
+  function syncPhotos() {
+    if (!window.LZX_API) return;
+    const base = LZX_API.base();
+    LZX_API.state().then(d => {
+      if (!d || !d.ok || !Array.isArray(d.photos)) return;
+      shared = d.photos.slice().reverse().map(p => ({
+        src: base + p.url,
+        cap: p.cap || (p.name ? (p.name + ' 上传的照片') : '大家上传的照片'),
+        shared: true,
+        pid: p.id
+      }));
+      if (shared.length) {
+        /* 已经传上去的本地副本就别再显示了，免得同一张出现两次 */
+        const keep = gallery.filter(x => !x.up);
+        if (keep.length !== gallery.length) { gallery = keep; store.set(GAL_KEY, gallery); }
+        buildDeck(true);
+        if (slideHint) {
+          slideHint.textContent = '其中 ' + shared.length + ' 张是大家上传的 ✦';
+          slideHint.classList.remove('warn');
+        }
+      }
+    });
   }
 
   function makeCell() {
@@ -1407,8 +1536,10 @@
   }
 
   function loadCell(cell, i) {
-    const item = items[((i % items.length) + items.length) % items.length];
+    const mi = ((i % items.length) + items.length) % items.length;
+    const item = items[mi];
     if (!item) return;
+    cell.i = mi;              /* 记下这一格现在放的是第几张，管理删图要用 */
     cell.img.src = item.src;
     if (cell.img.decode) cell.img.decode().catch(() => {});
   }
@@ -1543,22 +1674,90 @@
           if (slideHint) { slideHint.textContent = '这些文件没法读取，换几张图片试试？'; slideHint.classList.add('warn'); }
           return;
         }
-        const ok = store.set(GAL_KEY, gallery.concat(added));
-        if (!ok) {
-          if (slideHint) { slideHint.textContent = '浏览器本地空间不够啦，先删掉几张再上传吧（照片会存在你自己的浏览器里）'; slideHint.classList.add('warn'); }
-          toast('本地存储空间不足，照片没有保存');
-          return;
-        }
+        /* 先上屏（立刻能看到），再传服务器 —— 本地存不下也不影响上传 */
         gallery = gallery.concat(added);
         buildDeck(true);
         playing = true;
         if (playBtn) playBtn.textContent = '暂停';
-        if (slideHint) { slideHint.textContent = '已添加 ' + added.length + ' 张照片 —— 只保存在本机浏览器里 :)' ; slideHint.classList.remove('warn'); }
+        const localOk = store.set(GAL_KEY, gallery);
+        if (slideHint) {
+          slideHint.textContent = localOk
+            ? ('已添加 ' + added.length + ' 张，正在上传…')
+            : ('已添加 ' + added.length + ' 张（本机存不下了，正在直接传到网上）');
+          slideHint.classList.remove('warn');
+        }
+
+        /* 传到服务器 —— 这一步才是「所有人都能看到」的关键 */
+        if (window.LZX_API) {
+          const who = (($('#diyName') && $('#diyName').value.trim()) ||
+                       ($('#noteName') && $('#noteName').value.trim()) || '');
+          let done = 0, bad = 0;
+          added.forEach(it => {
+            LZX_API.addPhoto({ data: it.src, cap: it.cap, name: who }).then(r => {
+              if (r && r.ok) { it.up = true; done++; }
+              else bad++;
+              if (done + bad < added.length) return;
+              store.set(GAL_KEY, gallery);
+              if (slideHint) {
+                if (bad) {
+                  slideHint.textContent = done + ' 张传上去了，' + bad + ' 张没成功（可能太大），可以再试一次';
+                  slideHint.classList.add('warn');
+                } else {
+                  slideHint.textContent = done + ' 张已上传 —— 所有打开这个页面的人都能看到 ✦';
+                  slideHint.classList.remove('warn');
+                }
+              }
+              if (done) toast(done + ' 张照片传到网上啦 ✨');
+            });
+          });
+        } else if (slideHint) {
+          slideHint.textContent = '照片已添加（只存在本机，这台设备上的浏览器能看到）';
+        }
         toast('照片加进来啦，开始回忆放映 ✨');
         e.target.value = '';
       });
     }
+    /* 管理模式下点照片可以删（照片是大家传的，总得有个收拾的口子） */
+    if (deck) {
+      deck.addEventListener('click', e => {
+        if (!adminCode()) return;
+        const img = e.target.closest('img');
+        if (!img) return;
+        const cell = cells.filter(c => c.img === img)[0];
+        const it = cell && items[cell.i];
+        if (!it || !it.shared) return;
+        if (!confirm('删掉这张照片吗？所有人都会看不到它了。')) return;
+        LZX_API.removePhoto(it.pid, adminCode()).then(d => {
+          if (d && d.ok) {
+            shared = shared.filter(x => x.pid !== it.pid);
+            buildItems();
+            buildDeck(true);
+            toast('照片已删除');
+          } else {
+            toast('删不掉，可能口令不对');
+          }
+        });
+      });
+    }
+
+    syncPhotos();
     preload(DEFAULT_ITEMS[0].src);
+  }
+
+  /* =========================================================
+     管理口令
+     ---------------------------------------------------------
+     页面是公开的，谁都能贴便签、传照片 —— 所以需要一个「收拾场面」的口子：
+       · 用 ?admin=口令 打开页面，口令会记在本次会话里
+       · 之后删别人的便签 / 删照片就不用每次输了
+     ========================================================= */
+  const ADMIN_KEY = 'lzx_admin';
+  function adminCode() {
+    try {
+      const q = new URLSearchParams(location.search).get('admin');
+      if (q) { sessionStorage.setItem(ADMIN_KEY, q); return q; }
+      return sessionStorage.getItem(ADMIN_KEY) || '';
+    } catch (e) { return ''; }
   }
 
   /* =========================================================
@@ -1614,6 +1813,34 @@
 
   let notes = store.get(NOTES_KEY, null);
   if (!notes || !notes.length) notes = DEFAULT_NOTES.slice();
+  /* 没有 by 的都是内置的示例便签，标成「本机」—— 只有这种能在本地直接撕掉 */
+  notes.forEach(n => { if (!n.by) n.local = true; });
+
+  /* 把服务器上的留言拉下来（所有人写的都在这儿） */
+  function syncNotes() {
+    if (!window.LZX_API) return;
+    LZX_API.state().then(d => {
+      if (!d || !d.ok || !Array.isArray(d.notes)) return;
+      const locals = notes.filter(n => n.local);
+      /* 服务器上的字段叫 name，本机用 from；样式字段缺了就按 id 推一个稳定的，
+         这样即使某条留言少了样式，也不会所有人都是同一张白纸 */
+      const fixed = d.notes.map(n => {
+        const idNum = String(n.id || '').split('').reduce((a, ch) => a + ch.charCodeAt(0), 0);
+        return {
+          id: n.id, text: n.text,
+          from: n.from || n.name || '',
+          c: (typeof n.c === 'number') ? n.c : (idNum % NCOLORS.length),
+          s: n.s || NSHAPES[idNum % NSHAPES.length].k,
+          m: n.m || NMATS[idNum % NMATS.length].k,
+          tilt: (typeof n.tilt === 'number') ? n.tilt : ((idNum % 11) - 5),
+          by: n.by, at: n.at
+        };
+      });
+      notes = fixed.concat(locals);
+      renderWall(null);
+      if (window.__noteHint && notes.length) window.__noteHint.hidden = true;
+    });
+  }
   let sel = { c: 0, s: 'round', m: 'paper' };
 
   function noteHTML(n) {
@@ -1730,7 +1957,22 @@
       tilt: Number(rnd(-5, 5).toFixed(2))
     };
     notes.unshift(n);
-    const ok = store.set(NOTES_KEY, notes);
+    /* 送到服务器 —— 这样所有人打开都能看到这条祝福 */
+    if (window.LZX_API) {
+      LZX_API.addNote({ text: n.text, from: n.from, name: n.from, c: n.c, s: n.s, m: n.m, tilt: n.tilt })
+        .then(d => {
+          if (d && d.ok && d.note) {
+            n.id = d.note.id;
+            n.by = d.note.by;
+            n.at = d.note.at;
+            /* 本机只留「内置示例」，真实留言以服务器为准，省本地空间 */
+            store.set(NOTES_KEY, notes.filter(x => x.local));
+          } else if (d === null) {
+            toast('便签贴上了，不过现在连不上服务器，别人暂时看不到哦');
+          }
+        });
+    }
+    const ok = store.set(NOTES_KEY, notes.filter(x => x.local)) || true;
     renderWall(n.id);
     if (noteText) noteText.value = '';
     if (charNow) charNow.textContent = '0';
@@ -1745,6 +1987,8 @@
     renderPicker();
     renderPreview();
     renderWall(null);
+    window.__noteHint = emptyTip;
+    syncNotes();
 
     if (noteAdd) noteAdd.addEventListener('click', addNote);
 
@@ -1762,13 +2006,29 @@
       const card = del.closest('.note-card');
       if (!card) return;
       const id = card.dataset.id;
-      notes = notes.filter(n => n.id !== id);
-      store.set(NOTES_KEY, notes);
-      card.style.transition = 'transform .35s, opacity .35s';
-      card.style.transform = 'scale(.6) rotate(20deg)';
-      card.style.opacity = '0';
-      setTimeout(() => renderWall(null), 330);
-      toast('便签已撕下');
+      const note = notes.filter(n => n.id === id)[0];
+      const me = window.LZX_API ? LZX_API.visitor() : null;
+
+      function drop() {
+        notes = notes.filter(n => n.id !== id);
+        store.set(NOTES_KEY, notes.filter(x => x.local));
+        card.style.transition = 'transform .35s, opacity .35s';
+        card.style.transform = 'scale(.6) rotate(20deg)';
+        card.style.opacity = '0';
+        setTimeout(() => renderWall(null), 330);
+        toast('便签已撕下');
+      }
+
+      /* 别人贴的便签：要么是本人（同一台浏览器）撤自己的，要么输管理口令 */
+      if (!note || note.local || (note.by && note.by === me)) {
+        if (note && note.by && window.LZX_API) LZX_API.removeNote(id, adminCode());
+        drop();
+        return;
+      }
+      const code = prompt('这张便签是别人贴的。\n输入管理口令可以撕掉它：', adminCode());
+      if (!code) return;
+      if (window.LZX_API) LZX_API.removeNote(id, code);
+      drop();
     });
   }
 
@@ -2322,8 +2582,12 @@
       if (entered) return;
       entered = true;
 
-      /* 必须在这次点击里启动音频，否则浏览器不让出声 */
-      if (window.LZX_BGM && window.LZX_BGM.enabled()) window.LZX_BGM.start();
+      /* 必须在这次点击里碰音频，否则浏览器不让出声。
+         arm() 先解锁（烟花音效要用），音乐则看用户上次有没有主动关掉。 */
+      if (window.LZX_BGM) {
+        if (window.LZX_BGM.arm) window.LZX_BGM.arm();
+        if (window.LZX_BGM.enabled()) window.LZX_BGM.start();
+      }
       syncBgmBtn();
       if (bgmBtn) {
         bgmBtn.hidden = false;
