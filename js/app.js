@@ -1123,34 +1123,123 @@
   const LIGHT_KEY = 'lzx_light_count';
 
   /* ---------- 共享计数：所有人的点亮次数汇总在服务器上 ----------
-     大数字显示「大家一共点了多少次」，所以下一个人打开时能看到数字变大。 */
-  let gCandles = 0, gHosts = 0, gLoaded = false;
 
+     ⚠️ 这里的核心是**乐观更新**：点一下，大数字立刻 +1，
+        **不等服务器往返**。服务器只负责把这个数变成「所有人都看得到的数」。
+
+     之前的问题是：大数字直接读服务器返回值，于是
+       · 请求还没回来 / 被限流 / 网络抖一下 → 数字一动不动
+       · 而下面那行小字用的是本机计数，照常变化 → 看上去就是「小字动了、大数字没反应」。
+     现在四个量分工明确，任何一步出问题都不会让数字卡住：
+
+       gCandles  服务器确认过的「大家一共点亮」
+       gWait     本机已点、还没发出去的次数
+       gFly      发出去了、还没收到回执的次数
+       litCount  这台设备自己点过几次（本地存档，兜底用）
+
+     显示值 = gCandles + gWait + gFly —— 所以「我点 N 次，数字就 +N」永远成立。 */
+  let gCandles = 0, gHosts = 0, gLoaded = false;
+  let gWait = 0, gFly = 0, gRetryTimer = null, gRetryDelay = 6000;
+
+  function apiOk() {
+    return !!(window.LZX_API && LZX_API.isOnline() !== false);
+  }
+
+  function pendingCount() { return gWait + gFly; }
+
+  /* 大数字显示什么 —— 两个分支都保证「点了必增」 */
   function shownCount() {
-    return (gLoaded && window.LZX_API && LZX_API.isOnline() !== false) ? gCandles : litCount;
+    const n = gCandles + pendingCount();
+    if (gLoaded && apiOk()) return n;
+    /* 还没拿到服务器的数（或暂时连不上）：至少不小于本机点过的次数 */
+    return Math.max(litCount, n);
   }
 
   function renderShared() {
     const el = $('#lightShared');
     if (!el) return;
     if (window.LZX_API && LZX_API.isOnline() === false) {
-      el.textContent = '本机模式 · 暂时连不上服务器，现在只有你自己看得到';
+      el.textContent = '本机模式 · 暂时连不上服务器，你点的 ' + litCount + ' 次先记在这台设备上';
       el.classList.add('warn');
       return;
     }
     el.classList.remove('warn');
-    el.textContent = '已有 ' + gHosts + ' 位朋友为她点亮 · 你自己点了 ' + litCount + ' 次 · 所有人都能看到 ✦';
+    const head = '已有 ' + gHosts + ' 位朋友为她点亮 · 你自己点了 ' + litCount + ' 次 · ';
+    el.textContent = gPendingText(head);
+  }
+  function gPendingText(head) {
+    return pendingCount() > 0 ? (head + '正在上传 ✦') : (head + '所有人都能看到 ✦');
   }
 
+  /* 把队列里的点亮次数送出去。一次最多 5 个，避免一口气打太多请求。
+     成功 → 从「发飞中」销账，并采纳服务器返回的新总数；
+     失败 → 退回队列，15 秒后自动重试（所以限流或断网都不会丢）。 */
+  function pushCandles() {
+    if (!window.LZX_API || gWait <= 0) return;
+    /* 数据层还没就绪（api.js 没加载 / 版本不符）：先别扣账，稍后重试 ——
+       不然后面调用会抛异常，这一笔就凭空丢了 */
+    if (typeof LZX_API.candle !== 'function') { scheduleCandleRetry(); return; }
+    if (LZX_API.isOnline() === false) { scheduleCandleRetry(); return; }
+    const n = Math.min(gWait, 5);
+    gWait -= n;
+    gFly += n;
+    for (let i = 0; i < n; i++) {
+      let pr;
+      try {
+        pr = LZX_API.candle();
+      } catch (e) {
+        /* 调用当场就抛了：把这笔退回去，宁可重发也不能丢 */
+        gFly = Math.max(0, gFly - 1);
+        gWait++;
+        scheduleCandleRetry();
+        continue;
+      }
+      Promise.resolve(pr).then(function (d) {
+        gFly = Math.max(0, gFly - 1);
+        const ok = !!(d && d.ok);
+        if (ok) {
+          gCandles = Math.max(gCandles, d.candles || 0);
+          gHosts = d.hosts || 0;
+          gLoaded = true;
+        } else {
+          gWait++;                    /* 没成功就退回队列，等下一轮 */
+        }
+        renderCount(false);
+        renderShared();
+        if (gWait > 0) {
+          if (ok) {
+            gRetryDelay = 6000;
+            setTimeout(pushCandles, 180);   /* 还有积压就接着推 */
+          } else {
+            scheduleCandleRetry();
+          }
+        }
+      }).catch(function () {
+        gFly = Math.max(0, gFly - 1);
+        gWait++;
+        renderCount(false);
+        renderShared();
+        scheduleCandleRetry();
+      });
+    }
+  }
+
+  /* 退避重试：6 秒起，每次失败翻倍，最多 30 秒 —— 撞上写入限流也能自己爬出来 */
+  function scheduleCandleRetry() {
+    if (gRetryTimer) return;
+    gRetryTimer = setTimeout(() => { gRetryTimer = null; pushCandles(); }, gRetryDelay);
+    gRetryDelay = Math.min(gRetryDelay * 1.8, 30000);
+  }
+
+  /* 拉一次服务器上的权威值（别人点了多少） */
   function syncCandles() {
     if (!window.LZX_API) return;
     LZX_API.state().then(d => {
       if (d && d.ok) {
-        gCandles = d.candles || 0;
+        /* 本机点过但还没同步上去时，别让数字往回跳 */
+        gCandles = Math.max(d.candles || 0, litCount);
         gHosts = d.hosts || 0;
         gLoaded = true;
-        /* 本机点过但还没同步上去的，先按本机数算，别让数字往回跳 */
-        if (litCount > gCandles) gCandles = litCount;
         renderCount(false);
       }
       renderShared();
@@ -1158,12 +1247,19 @@
   }
 
   function renderCount(bump) {
-    if (!lightNum) return;
-    lightNum.textContent = shownCount();
+    /* ⚠️ 每次都重新取元素，不用初始化时缓存的引用：
+       页面若被外部编辑器重新渲染过，旧引用会脱离文档 ——
+       写进去完全看不见，表现就是「大数字点了没反应」。 */
+    const el = document.getElementById('lightCount') || lightNum;
+    if (!el) return;
+    el.textContent = shownCount();
     if (bump) {
-      lightNum.classList.remove('bump');
-      void lightNum.offsetWidth;
-      lightNum.classList.add('bump');
+      /* 动画挂在 .counter-num（父级）上 —— CSS 里的选择器就是 .counter-num.bump，
+         之前加到 <b> 上，等于这个跳动动画从来没生效过 */
+      const box = el.closest('.counter-num') || el;
+      box.classList.remove('bump');
+      void box.offsetWidth;
+      box.classList.add('bump');
     }
   }
 
@@ -1197,19 +1293,12 @@
   function lightUp() {
     litCount++;
     store.set(LIGHT_KEY, litCount);
+    /* 先把这一次记进「待发队列」，再渲染 ——
+       所以点击的当下大数字就会 +1，与网络快慢、服务器是否正常**完全无关** */
+    gWait++;
     renderCount(true);
-    /* 同步到服务器 —— 所有人都会看到这个数字变大 */
-    if (window.LZX_API) {
-      LZX_API.candle().then(d => {
-        if (d && d.ok) {
-          gCandles = Math.max(gCandles, d.candles || 0);
-          gHosts = d.hosts || 0;
-          gLoaded = true;
-          renderCount(false);
-        }
-        renderShared();
-      });
-    }
+    renderShared();
+    pushCandles();
 
     const idx = Math.min(litCount - 1, candles.length - 1);
     if (candles[idx]) candles[idx].el.classList.add('is-lit');
@@ -1247,6 +1336,15 @@
     renderCount(false);
     renderShared();
     syncCandles();
+    /* 每 45 秒悄悄拉一次：别人点的，自己这边也能跟上。
+       只读接口，不占写入限流额度。 */
+    setInterval(() => { if (!document.hidden) syncCandles(); }, 45000);
+    /* 页面回到前台时，把积压的补上、顺便刷新一次 */
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) return;
+      syncCandles();
+      pushCandles();
+    });
 
     if (lightBtn) lightBtn.addEventListener('click', lightUp);
 
