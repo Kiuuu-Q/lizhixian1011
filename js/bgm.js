@@ -2,8 +2,12 @@
    声音引擎：Web Audio API 现场合成
    ---------------------------------------------------------
    两个部分：
-     1. 背景音乐 —— 八音盒版的《生日快乐》，**四声部编制**：
-        主旋律(bell) + 和声(soft) + 分解和弦琶音(arp) + 弦垫(pad) + 低音(bass)
+     1. 背景音乐 —— 八音盒版的《生日快乐》，**三层编配**（刻意从简）：
+          ① 主旋律  八音盒音色，最突出，是唯一的主角
+          ② 和声    只在 ≥1 拍的长音上，且**必须严格是和弦音**，音量很轻
+          ③ 低音    每个和弦换一次，低八度长音，只当地基
+        之前那版还加了「分解和弦琶音」和「长弦垫」——两个都在中音区和主旋律抢地盘，
+        再加 2.1 秒的长混响，音符之间糊成一片，听感就是「乱」。全部去掉了。
      2. 音效 —— 烟花升空的「咻」与炸开的「砰」，由烟花引擎逐朵触发
 
    为什么全部用合成、不用音频文件：
@@ -56,8 +60,32 @@
   ];
 
   var BEAT = 0.72;          /* 一拍的秒数 → 约 83 BPM */
-  var VOL = 0.30;           /* 主音量 */
+  var VOL = 0.34;           /* 总音量（声部减了，这里可以稍微抬一点） */
+  var MEL_VOL = 0.30;       /* 主旋律 —— 最响 */
+  var HARM_VOL = 0.052;     /* 和声 —— 很轻，只是给旋律垫个底 */
+  var BASS_VOL = 0.05;      /* 低音 */
   var TAIL = 2 * BEAT;      /* 一轮结束后留白 */
+
+  /* 当前还活着的振荡器。暂停 / 重新开始时要把它们**真正停掉** ——
+     只把音量淡到 0 是不够的：已经排到时间轴上的音符还在走，
+     再点播放就会「新的一轮 + 旧的残余」叠在一起，听起来就是错位、发乱。 */
+  var live = [];
+
+  function track(osc) {
+    live.push(osc);
+    osc.onended = function () {
+      var i = live.indexOf(osc);
+      if (i >= 0) live.splice(i, 1);
+    };
+  }
+
+  function killAll() {
+    var list = live.slice();
+    live.length = 0;
+    for (var i = 0; i < list.length; i++) {
+      try { list[i].stop(); } catch (e) {}
+    }
+  }
 
   var ctx = null, master = null, bus = null;
   var playing = false, cycleTimer = null, started = false;
@@ -113,9 +141,9 @@
 
     /* 混响支路：bus → 干声 → master，同时 bus → 混响 → master */
     var verb = ctx.createConvolver();
-    verb.buffer = makeImpulse(2.1, 2.6);
+    verb.buffer = makeImpulse(1.15, 2.2);
     var verbGain = ctx.createGain();
-    verbGain.gain.value = 0.32;
+    verbGain.gain.value = 0.2;
     bus = ctx.createGain();
     bus.gain.value = 1;
 
@@ -151,10 +179,11 @@
       g.connect(bus);
       osc.start(at);
       osc.stop(end + 0.04);
+      track(osc);
     }
   }
 
-  /* ---------- 声部 2：和声 / 琶音用的软音色（两个泛音，圆润不抢） ---------- */
+  /* ---------- 声部 2：和声用的软音色（两个泛音，圆润不抢） ---------- */
   function soft(freq, at, dur, vol) {
     var partials = [[1, 1.0, 1.0], [2, 0.22, 0.5]];
     for (var i = 0; i < partials.length; i++) {
@@ -172,40 +201,27 @@
       g.connect(bus);
       osc.start(at);
       osc.stop(end + 0.04);
+      track(osc);
     }
   }
 
-  /* ---------- 声部 3：弦垫（持续音，慢起慢收，只做背景） ---------- */
-  function pad(freqs, at, dur, vol) {
-    for (var i = 0; i < freqs.length; i++) {
-      var osc = ctx.createOscillator();
-      osc.type = 'triangle';
-      osc.frequency.value = freqs[i];
-      var g = ctx.createGain();
-      var peak = Math.max(vol * (i === 0 ? 1 : 0.7), 0.0002);
-      g.gain.setValueAtTime(0.0001, at);
-      g.gain.exponentialRampToValueAtTime(peak, at + dur * 0.22);
-      g.gain.exponentialRampToValueAtTime(0.0001, at + dur * 1.05);
-      osc.connect(g);
-      g.connect(bus);
-      osc.start(at);
-      osc.stop(at + dur * 1.1 + 0.05);
-    }
-  }
-
-  /* ---------- 声部 4：低音 ---------- */
+  /* ---------- 声部 3：低音 ----------
+     ⚠️ 衰减必须**严格在该和弦段内结束**（at + dur，不乘系数）：
+        否则前一个和弦的低音会拖进下一个和弦里，C 和 G 同时响 → 立刻不协和。 */
   function bassNote(freq, at, dur) {
     var osc = ctx.createOscillator();
     osc.type = 'triangle';
     osc.frequency.value = freq;
     var g = ctx.createGain();
+    var end = at + Math.max(dur, 0.34);
     g.gain.setValueAtTime(0.0001, at);
-    g.gain.exponentialRampToValueAtTime(0.055, at + 0.05);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + dur * 1.35);
+    g.gain.exponentialRampToValueAtTime(BASS_VOL, at + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, end);
     osc.connect(g);
     g.connect(bus);
     osc.start(at);
-    osc.stop(at + dur * 1.4 + 0.05);
+    osc.stop(end + 0.04);
+    track(osc);
   }
 
   /* 大三和弦的音（本项目用到的和弦都是大三和弦） */
@@ -214,70 +230,62 @@
     return [nameOf(r), nameOf(r + 4), nameOf(r + 7)];
   }
 
-  /* 给旋律音配一个「下方最近的和弦音」，这样和声一定协和，不会撞音 */
+  /* 给旋律音配一个「下方最近的和弦音」。
+     ⚠️ 找不到就返回 null（= 这个音不配和声）。
+        旧版在找不到时兜底成「旋律下方 5 个半音」，那是纯拍脑袋 ——
+        经常落在一个既不属于和弦、也不属于调内的音上，一听就「跑调 / 发乱」。
+        宁可少一层和声，也不能塞一个不对的音。 */
   function harmonyFor(melodyName, chordRoot) {
     var m = midiOf(melodyName);
-    var t = triad(chordRoot);
+    var tones = triad(chordRoot);
     var best = null;
-    for (var i = 0; i < t.length; i++) {
-      var c = midiOf(t[i]);
-      /* 往下找，最多低 11 个半音（超过就变成另一个声部了） */
-      for (var k = 0; k < 2; k++) {
+    for (var i = 0; i < tones.length; i++) {
+      var c = midiOf(tones[i]);
+      /* 每个和弦音各往下试两个八度，挑「比旋律低 3~16 个半音」里最高的那个 */
+      for (var k = 0; k <= 2; k++) {
         var cand = c - k * 12;
-        if (cand < m - 11 || cand > m - 2) continue;
+        var d = m - cand;
+        if (d < 3 || d > 16) continue;
         if (best === null || cand > best) best = cand;
       }
     }
-    if (best === null) best = m - 5;
     return best;
   }
 
-  /* ---------- 排一轮：五个声部同时排，快放完时再排下一轮 ---------- */
+  /* ---------- 排一轮：三层，快放完时再排下一轮 ---------- */
   function scheduleCycle(from) {
     /* 先算出每个旋律音的起始时刻，后面所有声部都对齐这条时间轴 */
     var times = [from];
     for (var i = 0; i < SONG.length; i++) times.push(times[i] + SONG[i][1] * BEAT);
     var end = times[SONG.length];
 
-    /* ①② 主旋律 + 和声：和声取「下方最近的和弦音」，一定协和 */
+    /* ① 主旋律 + ② 和声：和声只给 ≥1 拍的长音配，短音配了只会显得毛躁 */
     for (var m = 0; m < SONG.length; m++) {
       var dur = SONG[m][1] * BEAT;
-      bell(freqOf(SONG[m][0]), times[m], dur * 1.9, VOL);
-      soft(freqOf(nameOf(harmonyFor(SONG[m][0], CHORDS[m]))), times[m], dur * 1.7, 0.085);
+      bell(freqOf(SONG[m][0]), times[m], dur * 1.9, MEL_VOL);
+      if (SONG[m][1] >= 1) {
+        var hv = harmonyFor(SONG[m][0], CHORDS[m]);
+        if (hv !== null) soft(freqOf(nameOf(hv)), times[m], dur * 1.5, HARM_VOL);
+      }
     }
 
-    /* ③④⑤ 按「和弦是否变化」切段，每段里排：琶音 + 弦垫 + 低音 */
+    /* ③ 低音：按「和弦是否变化」切段，每段一个长音，给整首搭地板 */
     var segStart = 0;
     for (var s = 1; s <= SONG.length; s++) {
       if (s < SONG.length && CHORDS[s] === CHORDS[segStart]) continue;
-
       var root = CHORDS[segStart];
       var st = times[segStart];
       var len = times[s] - st;
-      var tones = triad(root);
-      var i;
-
-      /* ③ 分解和弦：八分音符跑 根-三-五-三，落在旋律下方，不抢主音 */
-      var step = BEAT / 2;
-      var pick = [0, 1, 2, 1, 0, 1, 2, 1];
-      var idx = 0;
-      for (var nt = st; nt < st + len - 0.001; nt += step) {
-        soft(freqOf(nameOf(midiOf(tones[pick[idx % 8]]))), nt, step * 1.5, 0.042);
-        idx++;
-      }
-
-      /* ④ 弦垫：整段铺住，慢起慢收，只做背景 */
-      var padF = [];
-      for (i = 0; i < 3; i++) padF.push(freqOf(nameOf(midiOf(tones[i]) - 12)));
-      pad(padF, st, len, 0.030);
-
-      /* ⑤ 低音：整段一个长音，给音乐搭地板 */
-      bassNote(freqOf(nameOf(midiOf(root) - 12)), st, len * 0.9);
-
+      bassNote(freqOf(nameOf(midiOf(root) - 12)), st, Math.min(len * 0.92, 2.4));
       segStart = s;
     }
 
     var next = end + TAIL;
+    /* ⚠️ 页面切到后台时 setTimeout 会被浏览器节流，回来时 next 可能已经是过去时刻。
+       那样 Web Audio 会把整轮音符「立刻」全部播出来 —— 轰的一下全糊在一起。
+       所以一旦发现晚了，就把这一轮的起点顺延到现在。 */
+    if (next < ctx.currentTime + 0.15) next = ctx.currentTime + 0.3;
+
     var waitMs = (next - ctx.currentTime - 0.45) * 1000;
     cycleTimer = setTimeout(function () {
       if (playing) scheduleCycle(next);
@@ -415,6 +423,7 @@
     playing = true;
     started = true;
     clearTimer();
+    killAll();                 /* 兜底：把可能残留的上一轮音符真正停掉，避免叠音 */
     fadeTo(VOL, 1.8);
     scheduleCycle(ctx.currentTime + 0.25);
     writePref(true);
@@ -429,6 +438,8 @@
     playing = false;
     clearTimer();
     fadeTo(0, 0.7);
+    /* 淡出之后把音符真正停掉 —— 否则再点播放会「新的一轮 + 旧的残余」叠着响 */
+    setTimeout(killAll, 780);
     if (byUser) writePref(false);
     emit();
   }
@@ -442,10 +453,17 @@
     try { localStorage.setItem(KEY, on ? '1' : '0'); } catch (e) {}
   }
 
-  /* 被嵌在 iframe 里（比如编辑器的内置预览面板）时，默认不出声 ——
-     预览往往是自动打开的，一进来就循环放歌会吵到人。手动点右上角按钮仍然能听。 */
+  /* 判断「这是编辑器/工具的内置预览，不是用户真的打开了网页」。
+     这种情况默认不出声 —— 预览往往是自动弹出来的，一进来就循环放歌太吵。
+     右上角那个喇叭按钮仍然可以手动打开，所以不会把人挡在外面。
+
+     ⚠️ 只判断 window.top 是不够的：WorkBuddy / 各类编辑器的内置预览是
+        **Electron 的 webview**，页面在里面本身就是顶层窗口，`self === top` 成立，
+        于是照样自动播放（本轮就是这么吵到人的）。所以再补一条 UA 判断。 */
   function inEmbed() {
-    try { return window.self !== window.top; } catch (e) { return true; }
+    try { if (window.self !== window.top) return true; } catch (e) { return true; }
+    if (/Electron|WorkBuddy/i.test(navigator.userAgent || '')) return true;
+    return false;
   }
 
   function readPref() {
