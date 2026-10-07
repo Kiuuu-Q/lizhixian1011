@@ -87,9 +87,9 @@
     peony:         { n: [40, 58], ring: 0, life: [0.0048, 0.0090], r: [5, 10],    gl: 0.16, g: 1.0 },
     chrysanthemum: { n: [52, 76], ring: 0, life: [0.0026, 0.0052], r: [4.5, 8.5], gl: 0.42, g: 1.0 },
     willow:        { n: [32, 48], ring: 0, life: [0.0016, 0.0033], r: [4, 7.5],   gl: 0.30, g: 1.7, gold: 1 },
-    ring:          { n: [40, 56], ring: 1, life: [0.0038, 0.0070], r: [4.5, 8],   gl: 0.20, g: 1.0 },
+    ring:          { n: [40, 56], ring: 1, life: [0.0038, 0.0070], r: [4.5, 8],   gl: 0.20, g: 0.45 },
     pistil:        { n: [40, 56], ring: 0, life: [0.0032, 0.0060], r: [4.5, 8.5], gl: 0.30, g: 1.0 },
-    crossette:     { n: [26, 38], ring: 1, life: [0.0032, 0.0054], r: [5, 9],     gl: 0,    g: 1.0 }
+    crossette:     { n: [26, 38], ring: 1, life: [0.0032, 0.0054], r: [5, 9],     gl: 0,    g: 0.55 }
   };
 
   /* 爆炸的一瞬，给整屏染一下这朵烟花的颜色 —— 就像真的把夜空照亮了一下。
@@ -198,8 +198,6 @@
     const scale = PERF.low ? 0.7 : 1;
     const n = Math.max(12, Math.round(rnd(spec.n[0], spec.n[1]) * scale));
     const power = rnd(4.8, 7.8) * (big ? 1.45 : 1) * (fwW < 640 ? 0.84 : 1);
-    /* 环要压扁成椭圆 —— 在天上看到的才是正圆 */
-    const squash = spec.ring ? Math.pow(Math.random(), 0.45) * 0.992 + 0.008 : 1;
     /* 花心：内圈换一个色调、速度慢一档，套出一朵小的 */
     const innerSprite = kind === 'pistil' ? fwSprites[(tone + 3) % FW_TONES.length] : null;
 
@@ -213,7 +211,9 @@
 
       const p = fwTake();
       p.x = x; p.y = y;
-      p.vx = Math.cos(ang) * sp * (spec.ring ? squash : 1);
+      /* 一律正圆：x / y 方向用同一个速度，屏幕上就是个规规矩矩的圆。
+         之前环型把 vx 乘了个 ~0.68 的系数压成椭圆，看上去像「竖着的鸡蛋」，已去掉。 */
+      p.vx = Math.cos(ang) * sp;
       p.vy = Math.sin(ang) * sp;
       p.life = 1;
       p.decay = rnd(spec.life[0], spec.life[1]) / (big ? 1.25 : 1);
