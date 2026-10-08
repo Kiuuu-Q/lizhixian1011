@@ -605,14 +605,21 @@
 
   /* 顶面和侧面之间的那道圆角 —— 少了它，圆柱顶边就是一条硬生生的直角，
      这是「低模感」最大的来源。做法是贴一条「暗 → 亮 → 透明」的过渡带。 */
-  /* 抹刀痕：每片贴一条斜向的明暗渐变，绕一圈接起来就成了螺旋纹理。
-     纯色侧面是最容易露「塑料感」的地方，加它立刻有手工感。 */
+  /* 抹刀痕：侧面那层柔和的明暗光泽。
+     ⚠️ 这里**必须是纯纵向**的渐变（x1 = x2 = 0）。
+     以前它是斜的（x1=0,y1=0 → x2=1,y2=1）。问题是每片薄片都会把这段纹理
+     在属于自己的 100×100 贴图里重画一遍 —— 于是横向的明暗在每一片里都
+     「从头开始」，绕一圈下来就是一排锯齿：凑近看是密密麻麻的竖条纹，
+     蛋糕转起来就是整片表面在闪（「蛋糕闪来闪去」的根源就在这一行）。
+     改成纵向之后横向不再有任何结构，一圈下来天然连续，闪就没了。
+     颜色仍是原来那几档奶白/暖白，只是把横向那一半去掉了。 */
   const SWIRL =
-    "<defs><linearGradient id='sw' x1='0' y1='0' x2='1' y2='1'>" +
-      "<stop offset='0' stop-color='#ffffff' stop-opacity='.34'/>" +
-      "<stop offset='.42' stop-color='#ffffff' stop-opacity='.03'/>" +
-      "<stop offset='.72' stop-color='#e3d7c2' stop-opacity='0'/>" +
-      "<stop offset='1' stop-color='#e3d7c2' stop-opacity='.24'/>" +
+    "<defs><linearGradient id='sw' x1='0' y1='0' x2='0' y2='1'>" +
+      "<stop offset='0' stop-color='#ece4d6' stop-opacity='.273'/>" +
+      "<stop offset='.2' stop-color='#ffffff' stop-opacity='.34'/>" +
+      "<stop offset='.52' stop-color='#ffffff' stop-opacity='.03'/>" +
+      "<stop offset='.9' stop-color='#e3d7c2' stop-opacity='.24'/>" +
+      "<stop offset='1' stop-color='#ece4d6' stop-opacity='.273'/>" +
     "</linearGradient></defs>" +
     "<rect width='100' height='100' fill='url(#sw)'/>";
 
@@ -1561,13 +1568,13 @@
   /* =========================================================
      4. 回忆放映机
      ========================================================= */
-  const DEFAULT_ITEMS = [
-    { src: 'assets/cake.jpg', cap: '今天的主角 —— 她的生日蛋糕 🎂' },
-    { src: 'assets/avatar.jpg', cap: '她喜欢的刘耀文，也来一起过生日 🐱' },
-    { src: 'assets/sign.jpg', cap: 'To 李芷贤 · Happy Birthday' }
-  ];
+  /* 内置样片：已按作者要求全部撤下，相册现在是空的。
+     留成一个空数组而不是删掉这段，是为了给「以后想放回几张样片」留个口子 ——
+     往这里塞回 { src, cap } 就能恢复。 */
+  const DEFAULT_ITEMS = [];
 
   const GAL_KEY = 'lzx_gallery';
+  const slideWindow = $('#slideWindow');
   const deck = $('#slideDeck');
   const captionEl = $('#slideCaption');
   const barEl = $('#filmBar');
@@ -1577,6 +1584,16 @@
   const slideHint = $('#slideHint');
 
   let gallery = store.get(GAL_KEY, []) || [];
+
+  /* 一次性清空：相册撤图之后，把以前存在这台设备上的照片也顺手清一次。
+     只认一个标记 —— 之后自己再添加的照片不会被抹掉。 */
+  const ALBUM_WIPED = 'lzx_album_wiped_v1';
+  if (!store.get(ALBUM_WIPED, false)) {
+    gallery = [];
+    store.set(GAL_KEY, gallery);
+    store.set(ALBUM_WIPED, true);
+  }
+
   let shared = [];        /* 大家上传到服务器上的照片 */
   let items = [];
   let cells = [];
@@ -1587,9 +1604,8 @@
   const DUR = 4800;
 
   function buildItems() {
-    /* 顺序：大家上传的 → 你自己加的 → 内置的几张 */
+    /* 顺序：大家上传的 → 你自己加的 → 内置的几张（当前为空） */
     items = shared.concat(gallery).concat(DEFAULT_ITEMS);
-    if (!items.length) items = DEFAULT_ITEMS.slice();
   }
 
   /* 从服务器把大家上传的照片拉下来 */
@@ -1647,11 +1663,12 @@
     cells[iPrev].el.classList.add('is-prev');
     cells[iCur].el.classList.add('is-current');
     cells[iNext].el.classList.add('is-next');
-    const cur = items[idx % items.length];
+    const cur = items.length ? items[idx % items.length] : null;
     if (captionEl) {
       captionEl.style.opacity = '0';
       setTimeout(() => {
-        captionEl.textContent = (cur && cur.cap) ? cur.cap : '';
+        captionEl.textContent = (cur && cur.cap) ? cur.cap
+          : (items.length ? '' : '相册空空的 —— 用下面「＋ 添加照片」放几张进来吧 ✦');
         captionEl.style.opacity = '1';
       }, 220);
     }
@@ -1675,10 +1692,19 @@
       loadCell(cells[iNext], idx + 1);
     }
     setRoles();
+    syncEmpty();
     acc = 0;
     if (barEl) barEl.style.width = '0%';
   }
   function ctx_bindClicks() {}
+
+  /* 相册空着的时候，别留一个白框 —— 窗口里给一句话，按钮也照顾一下 */
+  function syncEmpty() {
+    const empty = items.length === 0;
+    if (slideWindow) slideWindow.classList.toggle('is-empty', empty);
+    if (playBtn) playBtn.disabled = empty;
+    if (barEl) barEl.style.width = '0%';
+  }
 
   function go(step) {
     if (!cells.length || items.length < 2) return;
@@ -1745,12 +1771,17 @@
     $$('[data-act="next"]').forEach(b => b.addEventListener('click', () => { go(1); }));
 
     if (resetBtn) {
+      /* 内置样片撤下之后，「恢复默认」这个名字就不成立了 ——
+         它现在只做一件事：清掉这台设备上加过的照片。
+         （上传到网上的那些得由上传的人自己删，口令在页面上不做暴露。） */
+      resetBtn.textContent = '清空相册';
       resetBtn.addEventListener('click', () => {
-        if (!gallery.length) { toast('现在已经是默认照片啦'); return; }
+        if (!gallery.length && !shared.length) { toast('相册现在就是空的'); return; }
+        if (!gallery.length) { toast('这几张是传到网上的，得由上传的人自己撤'); return; }
         gallery = [];
         store.set(GAL_KEY, gallery);
         buildDeck(true);
-        toast('已恢复默认照片');
+        toast('已清空这台设备上加的照片');
       });
     }
 
