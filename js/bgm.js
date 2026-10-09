@@ -707,6 +707,7 @@
   var BGM_VOL = 0.50;
   var GAP_MIN = 1.0, GAP_MAX = 2.0;        /* 每次循环之间隔 1~2 秒 */
   var audioEl = null, gapTimer = null, fadeTimer = null;
+  var resumeAfterHidden = false, needsGesture = false;
   var usingFile = false, synthOnly = false; /* synthOnly：文件失败过，之后一直用合成 */
 
   function ensureAudio() {
@@ -715,10 +716,16 @@
     try {
       audioEl = new Audio();
       audioEl.preload = window.matchMedia && window.matchMedia('(pointer: coarse), (max-width: 640px)').matches ? 'metadata' : 'auto';
-      audioEl.loop = false;                /* 自己管循环，好控制间隔 */
+      audioEl.loop = !!(window.matchMedia && window.matchMedia('(pointer: coarse), (max-width: 640px)').matches); // 手机用原生循环，避免定时器或循环空隙造成中断
       audioEl.volume = 0;
       audioEl.addEventListener('ended', onAudioEnded);
       audioEl.addEventListener('error', failToSynth);
+      audioEl.addEventListener('pause', function () {
+        if (playing && usingFile && !document.hidden && !gapTimer && !delayTimer) recoverAudio();
+      });
+      audioEl.addEventListener('canplay', function () {
+        if (playing && usingFile && audioEl.paused && !document.hidden && !gapTimer && !delayTimer) recoverAudio();
+      });
       audioEl.src = BGM_SRC;
     } catch (e) { audioEl = null; synthOnly = true; }
     return audioEl;
@@ -734,7 +741,7 @@
       if (!playing || !audioEl) return;
       try { audioEl.currentTime = 0; } catch (e) {}
       var p = audioEl.play();
-      if (p && p.catch) p.catch(function () { failToSynth(); });
+      if (p && p.catch) p.catch(handlePlayError);
     }, gap);
   }
 
@@ -766,19 +773,36 @@
   }
 
   /* 起音乐的两种方式：优先文件，失败才用合成 */
+  function handlePlayError(error) {
+    if (error && (error.name === 'NotAllowedError' || error.name === 'AbortError')) { needsGesture = true; return; }
+    failToSynth();
+  }
+
+  function recoverAudio() {
+    if (!started || userMuted || document.hidden) return;
+    if (ctx && ctx.state !== 'running' && ctx.resume) { try { ctx.resume(); } catch (e) {} }
+    if (playing && usingFile && audioEl && audioEl.paused && !gapTimer && !delayTimer) {
+      try { var p = audioEl.play(); if (p && p.then) p.then(function () { needsGesture = false; }).catch(handlePlayError); }
+      catch (e) { handlePlayError(e); }
+    }
+  }
+
   function startFile() {
     usingFile = true;
     var a = ensureAudio();
     if (!a) { synthOnly = true; startSynth(); return; }
     a.volume = 0;
+    // 延迟结束后回到曲目开头；首次 play 已在真实点击里完成解锁。
+    try { a.currentTime = 0; } catch (e) {}
     var pr = a.play();
-    if (pr && pr.catch) pr.catch(function () { failToSynth(); });
+    if (pr && pr.catch) pr.catch(handlePlayError);
     /* 淡入从 1.6s 收到 1.0s：用户要求「烟花绽放 2 秒后音乐才开始」，
        淡入太长会让音乐「其实早就隐约在了」，听不出那个分界。 */
     fadeAudio(BGM_VOL, 1000);
   }
 
   function startSynth() {
+    if (!ctx && !build()) { playing = false; emit(); return; }
     usingFile = false;
     fadeTo(VOL, 1.8);
     nextAt = ctx.currentTime + 0.25;
@@ -790,8 +814,8 @@
      开场点击时调用：这样即使用户关掉了背景音乐，烟花音效也还能响。 */
   function arm() {
     ensureAudio();               /* 点「进入」时把音频加载安排上（preload 早就该在跑了） */
-    if (!build()) return false;
-    if (ctx.state === 'suspended' && ctx.resume) {
+    if (!build() && !ensureAudio()) return false;
+    if (ctx && ctx.state === 'suspended' && ctx.resume) {
       try { ctx.resume(); } catch (e) {}
     }
     started = true;
@@ -802,14 +826,26 @@
   function start() {
     userMuted = false;
     /* 必须在用户手势里调用，否则 iOS / Chrome 会拒绝出声 */
-    if (!build()) return false;
-    if (ctx.state === 'suspended' && ctx.resume) {
+    if (!build() && !ensureAudio()) return false;
+    if (ctx && ctx.state === 'suspended' && ctx.resume) {
       try { ctx.resume(); } catch (e) {}
     }
     if (playing) return true;
     playing = true;
     started = true;
     stopTimers();
+    if (fadeTimer) { clearInterval(fadeTimer); fadeTimer = null; }
+    // 必须在点击回调中调用媒体 play，不能等两秒定时器后才调用。
+    if (!synthOnly) {
+      var a = ensureAudio();
+      if (a) {
+        a.preload = 'auto';
+        a.volume = 0;
+        usingFile = true;
+        try { var unlock = a.play(); if (unlock && unlock.catch) unlock.catch(handlePlayError); }
+        catch (e) { handlePlayError(e); }
+      }
+    }
     killAll();                 /* 兜底：把可能残留的上一轮合成音符真正停掉，避免叠音 */
     /* 音乐延后 START_DELAY 毫秒进来：先让开场烟花自己响那两秒 */
     if (delayTimer) clearTimeout(delayTimer);
@@ -825,7 +861,7 @@
 
   /* byUser=false 时只停声音、不改偏好（切后台走这条） */
   function pause(byUser) {
-    if (byUser) userMuted = true;
+    if (byUser) { userMuted = true; resumeAfterHidden = false; }
     if (!playing) { if (byUser) { writePref(false); emit(); } return; }
     playing = false;
     stopTimers();
@@ -833,7 +869,8 @@
     if (delayTimer) { clearTimeout(delayTimer); delayTimer = null; }
     if (gapTimer) { clearTimeout(gapTimer); gapTimer = null; }   /* 别在暂停后偷偷接上下一轮 */
     if (usingFile && audioEl) {
-      fadeAudio(0, 700, function () { try { audioEl.pause(); } catch (e) {} });
+      if (byUser) fadeAudio(0, 700, function () { if (!playing) { try { audioEl.pause(); } catch (e) {} } });
+      else { if (fadeTimer) { clearInterval(fadeTimer); fadeTimer = null; } try { audioEl.pause(); } catch (e) {} }
     } else {
       fadeTo(0, 0.7);
       /* 淡出之后把音符真正停掉 —— 否则再点播放会「新的一轮 + 旧的残余」叠着响 */
@@ -893,8 +930,20 @@
      这样点「进入」的那一刻就能出声，不用等下载。 */
   ensureAudio();
 
-  /* 切到别的 App / 锁屏时自动停，回来不自动响（礼貌一些） */
+  // 返回网页恢复原播放状态；用户主动关闭的音乐保持关闭。
   document.addEventListener('visibilitychange', function () {
-    if (document.hidden) pause(false);
+    if (document.hidden) { resumeAfterHidden = playing; pause(false); }
+    else if (resumeAfterHidden && !userMuted) {
+      resumeAfterHidden = false;
+      playing = true;
+      if (ctx && ctx.resume) { try { ctx.resume(); } catch (e) {} }
+      if (synthOnly) startSynth();
+      else { usingFile = true; recoverAudio(); fadeAudio(BGM_VOL, 400); }
+      emit();
+    }
   });
+  document.addEventListener('pointerdown', function () { if (needsGesture || (started && !userMuted)) recoverAudio(); }, { passive: true });
+  document.addEventListener('touchend', recoverAudio, { passive: true });
+  // 微信就绪事件可解锁媒体，仍尊重已关闭音乐的偏好。
+  document.addEventListener('WeixinJSBridgeReady', recoverAudio);
 })();

@@ -1048,6 +1048,7 @@ button, input, textarea { font: inherit; color: inherit; }
   pointer-events: none;
 }
 .b19-post img {
+  height: auto;
   position: relative;
   display: block;
   width: 100%;
@@ -3408,3 +3409,10 @@ body.gate-lock { overflow: hidden; height: 100%; touch-action: none; }
   @media (max-width: 620px) { .slide-window { padding-bottom: 75%; } }
   @media (min-width: 901px) { .b19-board { height: 0; padding-bottom: 64%; } }
 }
+
+/* 保留纵向滚动，关闭手机连续点击与双指缩放；画板保持自己的手势。 */
+html, body { touch-action: pan-x pan-y; }
+button, a, input, textarea { touch-action: manipulation; }
+#board { touch-action: none; }
+.board-save-status { margin: 10px 0; color: var(--ink-soft); font-size: 13px; text-align: center; }
+.board-save-status.warn { color: #b66a15; }

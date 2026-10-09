@@ -1673,6 +1673,14 @@
      以后再想清相册，只能由用户主动点「恢复默认」；任何自动清空都不许再加。 */
 
   let shared = [];        /* 大家上传到服务器上的照片 */
+  let photoBusy = false, galleryReady = !window.LZX_BOARD_STORE;
+  function saveGallery() {
+    const localOK = store.set(GAL_KEY, gallery);
+    if (window.LZX_BOARD_STORE) LZX_BOARD_STORE.saveGallery(gallery).then(ok => {
+      if (!ok && !localOK && slideHint) { slideHint.textContent = '本机存储不可用，请保持页面打开等待上传完成'; slideHint.classList.add('warn'); }
+    });
+    return localOK;
+  }
   let items = [];
   let cells = [];
   let iPrev = 0, iCur = 1, iNext = 2;
@@ -1683,7 +1691,8 @@
 
   function buildItems() {
     /* 顺序：大家上传的 → 你自己加的 → 内置样片 */
-    items = shared.concat(gallery).concat(DEFAULT_ITEMS);
+    const ids = new Set(shared.map(p => p.pid));
+    items = shared.concat(gallery.filter(p => !p.pid || !ids.has(p.pid))).concat(DEFAULT_ITEMS);
   }
 
   /* 从服务器把大家上传的照片拉下来 */
@@ -1693,6 +1702,7 @@
      起因：更早的版本上传时把 `f.name` 直接写进了 cap，相册下面就显示成文件名了。 */
   function filenameLike(t) {
     if (!t) return false;
+    if (/^__lzx_photo_[a-z0-9]+__$/i.test(t)) return true;
     var v = String(t).trim();
     if (/\.(jpe?g|png|gif|webp|heic|bmp|tiff?)$/i.test(v)) return true;
     /* 相机/手机/无人机的默认名：前缀 + 一串「数字/下划线/横线」。
@@ -1711,17 +1721,19 @@
     const base = LZX_API.base();
     LZX_API.state().then(d => {
       if (!d || !d.ok || !Array.isArray(d.photos)) return;
+      const previousPhotos = shared.map(p => p.pid).join(',');
       shared = d.photos.slice().reverse().map(p => ({
         src: base + p.url,
         /* ⚠️ 不拿 p.name 拼「XX 上传的照片」，也不显示文件名式残渣 */
         cap: filenameLike(p.cap) ? '' : (p.cap || ''),
         shared: true,
-        pid: p.id
+        pid: p.id,
+        uploadId: /^__lzx_photo_([a-z0-9]+)__$/i.test(p.cap || '') ? p.cap.match(/^__lzx_photo_([a-z0-9]+)__$/i)[1] : ''
       }));
-      if (shared.length) {
-        /* 已经传上去的本地副本就别再显示了，免得同一张出现两次 */
-        const keep = gallery.filter(x => !x.up);
-        if (keep.length !== gallery.length) { gallery = keep; store.set(GAL_KEY, gallery); }
+      if (shared.map(p => p.pid).join(',') !== previousPhotos) {
+        // 保留本机原副本；只在显示时去重，避免读取失败或迟到导致丢照片。
+        shared.forEach(p => { const it = gallery.find(x => x.uploadId && x.uploadId === p.uploadId); if (it) { it.up = true; it.pid = p.pid; } });
+        saveGallery();
         buildDeck(true);
         if (slideHint) {
           slideHint.textContent = '其中 ' + shared.length + ' 张是大家上传的 ✦';
@@ -1729,6 +1741,32 @@
         }
       }
     });
+  }
+
+  async function retryPhotos() {
+    if (!galleryReady || photoBusy || !window.LZX_API || document.hidden) return;
+    const pending = gallery.filter(x => !x.up && /^data:image\//.test(x.src || ''));
+    if (!pending.length) return;
+    photoBusy = true;
+    try {
+      // 先核对上次上传是否已被服务器收到，避免丢失确认后重复上传。
+      const state = await LZX_API.state();
+      if (!state || !Array.isArray(state.photos)) return;
+      for (const it of pending) {
+        if (!it.uploadId) it.uploadId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        const cap = it.cap || '__lzx_photo_' + it.uploadId + '__';
+        const known = state.photos.find(p => p.cap === cap && p.by === LZX_API.visitor());
+        const result = known ? {ok:true,photo:known} : await LZX_API.addPhoto({data:it.src,cap,name:it.name||''});
+        if (!result || !result.ok) break;
+        it.up = true; if (result.photo) it.pid = result.photo.id;
+        saveGallery();
+      }
+      syncPhotos();
+    } finally {
+      photoBusy = false;
+      const n = gallery.filter(x => !x.up).length;
+      if (slideHint) { slideHint.textContent = n ? n + ' 张照片待上传，联网后自动补传；本机副本保留' : '照片已共享，所有访客都能看到 ✦'; slideHint.classList.toggle('warn', n > 0); }
+    }
   }
 
   function makeCell() {
@@ -1857,6 +1895,16 @@
 
   function initSlides() {
     if (!deck) return;
+    if (window.LZX_BOARD_STORE) {
+      if (fileInput) fileInput.disabled = true;
+      LZX_BOARD_STORE.loadGallery().then(saved => {
+        gallery = saved;
+        gallery.forEach(it => { if (it.up && !it.pid) it.up = false; });
+        galleryReady = true;
+        if (fileInput) fileInput.disabled = false;
+        buildDeck(true); syncPhotos(); retryPhotos();
+      }).catch(() => { galleryReady = true; if (fileInput) fileInput.disabled = false; retryPhotos(); });
+    }
     buildDeck(true);
 
     if (playBtn) {
@@ -1877,7 +1925,7 @@
       resetBtn.addEventListener('click', () => {
         if (!gallery.length) { toast('相册现在就是空的'); return; }
         gallery = [];
-        store.set(GAL_KEY, gallery);
+        saveGallery();
         buildDeck(true);
         toast(DEFAULT_ITEMS.length ? '已恢复默认照片' : '已清空这台设备上的照片');
       });
@@ -1894,7 +1942,7 @@
           if (!/^image\//.test(f.type)) continue;
           try {
             const data = await compress(f, 1400, 0.82);
-            added.push({ src: data, cap: '' });   /* ⚠️ 不要把文件名当字幕 —— 会显示成 IMG_0016 / dji_mimo_2025..._photo 这种。 */
+            added.push({ src: data, cap: '', uploadId: Date.now().toString(36) + Math.random().toString(36).slice(2, 8) });   /* ⚠️ 不要把文件名当字幕 —— 会显示成 IMG_0016 / dji_mimo_2025..._photo 这种。 */
           } catch (err) { /* 忽略单张失败 */ }
         }
         if (!added.length) {
@@ -1906,7 +1954,7 @@
         buildDeck(true);
         playing = true;
         if (playBtn) playBtn.textContent = '暂停';
-        const localOk = store.set(GAL_KEY, gallery);
+        const localOk = saveGallery();
         if (slideHint) {
           slideHint.textContent = localOk
             ? ('已添加 ' + added.length + ' 张，正在上传…')
@@ -1918,25 +1966,9 @@
         if (window.LZX_API) {
           const who = (($('#diyName') && $('#diyName').value.trim()) ||
                        ($('#noteName') && $('#noteName').value.trim()) || '');
-          let done = 0, bad = 0;
-          added.forEach(it => {
-            LZX_API.addPhoto({ data: it.src, cap: it.cap, name: who }).then(r => {
-              if (r && r.ok) { it.up = true; done++; }
-              else bad++;
-              if (done + bad < added.length) return;
-              store.set(GAL_KEY, gallery);
-              if (slideHint) {
-                if (bad) {
-                  slideHint.textContent = done + ' 张传上去了，' + bad + ' 张没成功（可能太大），可以再试一次';
-                  slideHint.classList.add('warn');
-                } else {
-                  slideHint.textContent = done + ' 张已上传 —— 所有打开这个页面的人都能看到 ✦';
-                  slideHint.classList.remove('warn');
-                }
-              }
-              if (done) toast(done + ' 张照片传到网上啦 ✨');
-            });
-          });
+          added.forEach(it => { it.name = who; });
+          saveGallery();
+          retryPhotos();
         } else if (slideHint) {
           slideHint.textContent = '照片已添加（只存在本机，这台设备上的浏览器能看到）';
         }
@@ -1968,6 +2000,9 @@
     }
 
     syncPhotos();
+    retryPhotos();
+    setInterval(() => { if (!document.hidden) { syncPhotos(); retryPhotos(); } }, 15000);
+    window.addEventListener('online', retryPhotos);
     /* 预加载第一张。⚠️ 相册**可能是空的**（按作者要求先清空样片），
        所以必须先判空 —— 原来直接写 `DEFAULT_ITEMS[0].src`，
        数组一空就抛 TypeError，而这里在初始化流程里，
@@ -2378,7 +2413,77 @@
   const cctx = committed.getContext('2d');
 
   const BOARD_KEY = 'lzx_board';
-  const BOARD_MAX = 600;
+  // 完整保留笔画，不按数量截断。
+  let boardReady = !window.LZX_BOARD_STORE;
+  let boardSaveVersion = 0;
+  let boardSaveStatus = null;
+  let boardCloudKey = '', boardCloudBusy = false, boardCloudRevision = '';
+  let boardRemoved = [], boardCloudOnline = false, boardCloudTimer = null, boardCloudError = false;
+  const BOARD_CLOUD = 'https://lizhixian1011-shared-doodle.surefrog16.chatgpt.site';
+
+  function boardId() {
+    return 's' + (window.crypto && crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : Date.now().toString(36) + Math.random().toString(36).slice(2));
+  }
+  function initBoardIdentity() {
+    const meta = window.LZX_BOARD_STORE ? LZX_BOARD_STORE.metadata() : {};
+    boardRemoved = Array.isArray(meta.removed) ? meta.removed : [];
+    try { boardCloudKey = meta.key || localStorage.getItem('lzx_board_cloud_key') || ''; } catch (e) {}
+    if (!boardCloudKey) {
+      const bytes = new Uint8Array(32);
+      if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
+      else bytes.forEach((_, i) => { bytes[i] = Math.floor(Math.random() * 256); });
+      boardCloudKey = Array.from(bytes).map(n => n.toString(16).padStart(2, '0')).join('');
+      try { localStorage.setItem('lzx_board_cloud_key', boardCloudKey); } catch (e) {}
+    }
+    strokes.forEach(s => { if (!s.id) s.id = boardId(); });
+  }
+  function boardPending() { return strokes.filter(s => !s._shared); }
+  function renderBoardCloud() {
+    const count = boardPending().length + boardRemoved.length;
+    showBoardSave(count ? '还有 ' + count + ' 笔更改待上传 · 本机副本保留，联网后自动补传' : (boardCloudOnline ? '涂鸦已同步 · 所有设备和访客都能看到' : (boardCloudError ? '共享读取暂未成功 · 本机副本保留，会自动重试' : '正在读取共享涂鸦 · 本机副本保留')), boardCloudError);
+  }
+  function boardRequest(path, body) {
+    const ctl = window.AbortController ? new AbortController() : null;
+    const timer = setTimeout(() => { if (ctl) ctl.abort(); }, 30000);
+    return fetch(BOARD_CLOUD + path, {method: body ? 'POST' : 'GET', cache:'no-store', signal:ctl ? ctl.signal : undefined,
+      ...(body ? {headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body)} : {})})
+      .then(r => { if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(d => { if (!d || !d.ok) throw new Error('共享保存失败'); return d; })
+      .finally(() => clearTimeout(timer));
+  }
+  function scheduleBoardCloud() {
+    if (boardCloudTimer) clearTimeout(boardCloudTimer);
+    boardCloudTimer = setTimeout(syncBoardCloud, 800);
+  }
+  async function syncBoardCloud() {
+    if (!boardReady || boardCloudBusy || document.hidden) return;
+    boardCloudBusy = true;
+    try {
+      const pending = boardPending().slice(0, 20), removed = boardRemoved.slice(0, 100);
+      if (pending.length || removed.length) {
+        const additions = pending.map(s => ({id:s.id,t:s.t,c:s.c,w:s.w,seed:s.seed,o:s.o||'',p:s.p}));
+        const d = await boardRequest('/api/board', {visitor:ME,key:boardCloudKey,additions,removed});
+        const accepted = new Set(d.accepted || []), deleted = new Set(d.removed || []);
+        strokes.forEach(s => { if (accepted.has(s.id)) s._shared = true; });
+        boardRemoved = boardRemoved.filter(id => !deleted.has(id));
+        saveBoard(false);
+      }
+      const d = await boardRequest('/api/board?revision=' + encodeURIComponent(boardCloudRevision));
+      if (!d.unchanged && Array.isArray(d.strokes) && Array.isArray(d.removed)) {
+        const removedIds = new Set(d.removed.concat(boardRemoved)), remoteIds = new Set(d.strokes.map(s => s.id));
+        const local = strokes.filter(s => !remoteIds.has(s.id) && !removedIds.has(s.id));
+        strokes = d.strokes.filter(s => !removedIds.has(s.id)).map(s => ({...s,_shared:true})).concat(local);
+        if (!boardDraw) repaintAll();
+        saveBoard(false);
+      }
+      boardCloudRevision = d.revision || '';
+      boardCloudOnline = true; boardCloudError = false;
+    } catch (e) { boardCloudOnline = false; boardCloudError = true; }
+    finally { boardCloudBusy = false; renderBoardCloud(); if (boardPending().length || boardRemoved.length) { if (boardCloudTimer) clearTimeout(boardCloudTimer); boardCloudTimer = setTimeout(syncBoardCloud, boardCloudOnline ? 800 : 10000); } }
+  }
+  function removeBoardStrokes(removed) {
+    removed.forEach(s => { if (s.id && !boardRemoved.includes(s.id)) boardRemoved.push(s.id); });
+  }
 
   const BRUSHES = [
     { k: 'pen',    n: '圆珠笔', mul: 1.0, alpha: 1,   blend: 'source-over' },
@@ -2417,12 +2522,6 @@
   /* 没有 o 字段的是本次改版之前留下的笔画，一律当成「别人画的」保护起来 */
   const isMine = s => !!s && s.o === ME;
   const myStrokeCount = () => strokes.filter(isMine).length;
-
-  /* 超出上限时丢最旧的（极端情况下才触发），同步维护计数 */
-  function dropOldest(n) {
-    if (n <= 0) return;
-    strokes.splice(0, n);
-  }
 
   let curBrush = 'pen';
   let curColor = PEN_COLORS[0];
@@ -2632,17 +2731,25 @@
     if (liveStroke) paintStroke(bdctx, liveStroke);
   }
 
-  function saveBoard() {
-    if (!strokes.length) { try { localStorage.removeItem(BOARD_KEY); } catch (e) {} return; }
-    for (let guard = 0; guard < 8; guard++) {
-      try {
-        localStorage.setItem(BOARD_KEY, JSON.stringify(strokes));
-        return;
-      } catch (e) {
-        if (strokes.length <= 1) return;
-        dropOldest(Math.ceil(strokes.length / 4));
-      }
+  function showBoardSave(text, warn) {
+    if (!boardSaveStatus) return;
+    boardSaveStatus.textContent = text;
+    boardSaveStatus.classList.toggle('warn', !!warn);
+  }
+
+  function saveBoard(sync = true) {
+    const version = ++boardSaveVersion;
+    showBoardSave('正在保存涂鸦…');
+    if (window.LZX_BOARD_STORE) {
+      LZX_BOARD_STORE.save(strokes, {key:boardCloudKey,removed:boardRemoved.slice()}).then(result => {
+        if (version !== boardSaveVersion) return;
+        if (result.ok) renderBoardCloud(); else showBoardSave('本机保存空间不可用，正在尝试共享保存；请用「保存图片」另存备份', true);
+      });
+    } else {
+      try { localStorage.setItem(BOARD_KEY, JSON.stringify(strokes)); showBoardSave('涂鸦已保存在此浏览器'); }
+      catch (e) { showBoardSave('保存空间不可用，请先用「保存图片」备份；当前画面仍保留', true); }
     }
+    if (sync) scheduleBoardCloud();
   }
 
   function localPos(e) {
@@ -2694,6 +2801,22 @@
   function initBoard() {
     if (!board || !bdctx) return;
 
+    boardSaveStatus = document.createElement('p');
+    boardSaveStatus.className = 'board-save-status';
+    boardSaveStatus.setAttribute('role', 'status');
+    boardSaveStatus.id = 'boardSaveStatus';
+    board.closest('.board').appendChild(boardSaveStatus);
+    showBoardSave('正在恢复已保存的涂鸦…');
+    if (window.LZX_BOARD_STORE) {
+      LZX_BOARD_STORE.load().then(saved => {
+        strokes = saved;
+        initBoardIdentity();
+        boardReady = true;
+        repaintAll();
+        saveBoard();
+        syncBoardCloud();
+      }).catch(() => { boardReady = true; showBoardSave('已读取兼容副本，请用「保存图片」另存备份', true); });
+    } else { initBoardIdentity(); boardReady = true; saveBoard(); syncBoardCloud(); }
     renderBrushUI();
 
     const sizeEl = $('#penSize');
@@ -2709,11 +2832,13 @@
     const undo = $('#drawUndo');
     if (undo) {
       undo.addEventListener('click', () => {
+        if (!boardReady) return;
         if (!strokes.length) { toast('还没有画东西呢～'); return; }
         if (!isMine(strokes[strokes.length - 1])) {
           toast('只能撤销自己画的哦～');
           return;
         }
+        removeBoardStrokes([strokes[strokes.length - 1]]);
         strokes.pop();
         saveBoard();
         repaintAll();
@@ -2723,6 +2848,7 @@
     const clear = $('#drawClear');
     if (clear) {
       clear.addEventListener('click', () => {
+        if (!boardReady) return;
         const mine = myStrokeCount();
         if (!strokes.length) { toast('画布已经是空的啦'); return; }
         if (!mine) { toast('你没有画过东西，别人的笔迹不能清哦～'); return; }
@@ -2731,6 +2857,7 @@
           ? '只清掉你画的 ' + mine + ' 笔，别人画的 ' + others + ' 笔会保留。确定吗？'
           : '确定要把你画的 ' + mine + ' 笔清空吗？清掉就找不回来了。';
         if (!window.confirm(ask)) return;
+        removeBoardStrokes(strokes.filter(isMine));
         strokes = strokes.filter(s => !isMine(s));
         saveBoard();
         repaintAll();
@@ -2756,6 +2883,7 @@
     }
 
     board.addEventListener('pointerdown', e => {
+      if (!boardReady) { toast('正在恢复涂鸦，请稍候'); return; }
       if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
       boardDraw = true;
       try { board.setPointerCapture(e.pointerId); } catch (err) {}
@@ -2790,21 +2918,26 @@
       boardDraw = false;
       if (liveStroke) {
         if (liveStroke.t !== 'eraser') paintStroke(cctx, liveStroke);
+        liveStroke.id = boardId();
         strokes.push(liveStroke);
-        dropOldest(strokes.length - BOARD_MAX);
         saveBoard();
         liveStroke = null;
-        blit();
+        repaintAll();
         if (boardHint) boardHint.hidden = strokes.length > 0;
       }
       if (e && e.preventDefault) e.preventDefault();
     }
 
+    window.addEventListener('pagehide', () => endStroke());
+    document.addEventListener('visibilitychange', () => { if (document.hidden) endStroke(); });
     board.addEventListener('pointerup', endStroke);
     board.addEventListener('pointercancel', endStroke);
     board.addEventListener('pointerleave', e => { if (boardDraw) endStroke(e); });
 
     sizeBoard();
+    setInterval(syncBoardCloud, 10000);
+    window.addEventListener('online', syncBoardCloud);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) syncBoardCloud(); });
   }
 
   /* =========================================================
@@ -3107,6 +3240,10 @@
   }
 
   function init() {
+    // 旧版 WebKit 的缩放手势也显式阻止；普通滚动和按钮点击保持可用。
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(name => document.addEventListener(name, e => e.preventDefault(), { passive: false }));
+    document.addEventListener('touchstart', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+    document.addEventListener('dblclick', e => e.preventDefault());
     buildTitle();
     bgResize();
     initGate();
