@@ -204,8 +204,9 @@ button, input, textarea { font: inherit; color: inherit; }
           drop-shadow(0 12px 20px rgba(104, 88, 205, .30));
   /* Pacifico 的墨迹比 em 盒高得多，盒子不够大会把 ascender/descender 裁掉；
      用 padding 撑开背景盒、再用负 margin 把版面尺寸收回来 */
-  padding: 0.42em 0.03em;
-  margin: -0.42em -0.03em;
+  padding: .26em .20em .48em;
+  margin: 0 -.20em;
+  overflow: visible;
   transform-origin: 50% 78%;
   animation: ltrFloat 3.9s ease-in-out infinite;
   animation-delay: calc(var(--i) * -0.19s);
@@ -223,7 +224,7 @@ button, input, textarea { font: inherit; color: inherit; }
 
 @keyframes ltrFloat {
   0%, 100% { transform: translateY(0) rotate(var(--rot, 0deg)); }
-  50%      { transform: translateY(-16px) rotate(calc(var(--rot, 0deg) * -0.6)); }
+  50%      { transform: translateY(var(--title-rise, -16px)) rotate(calc(var(--rot, 0deg) * -0.6)); }
 }
 
 /* ---- 日期艺术字（尺寸明显小于标题） ---- */
@@ -3375,3 +3376,31 @@ body.gate-lock { overflow: hidden; height: 100%; touch-action: none; }
   transition: color .3s ease;
 }
 .counter-shared.warn { color: #d98324; }
+
+
+/* 手机保留全部内容与装饰，只降低模糊和持续重绘的成本。 */
+.motion-paused, .motion-paused *, .motion-paused *::before, .motion-paused *::after {
+  animation-play-state: paused !important;
+}
+.perf-mobile .bg-aurora .blob { filter: blur(32px); animation: none; }
+.perf-mobile .title-art .ltr {
+  --title-rise: -5px;
+  filter: drop-shadow(0 2px 0 rgba(255,255,255,.95));
+  animation-duration: 6s;
+}
+.perf-mobile .hero-wish { animation: none; }
+.perf-mobile .tag, .perf-mobile .note-editor, .perf-mobile .note.mat-frost,
+.perf-mobile .board, .perf-mobile .shared-controls {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.shared-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 16px;
+  margin: 18px 0;
+}
+.shared-controls p { margin: 0; font-size: 13px; color: var(--ink-soft); }
+.shared-controls .btn { padding: 8px 14px; font-size: 13px; }

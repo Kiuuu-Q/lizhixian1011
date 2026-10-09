@@ -144,7 +144,7 @@
   function fwResize() {
     if (!fw || !fwx) return;
     /* 烟花是发光粒子，不需要极致清晰 —— 这里选「流畅」而不是「清晰」 */
-    fwDpr = Math.min(window.devicePixelRatio || 1, PERF.low ? 1.25 : 1.5);
+    fwDpr = Math.min(window.devicePixelRatio || 1, PERF.mobile ? 1 : (PERF.low ? 1.25 : 1.5));
     fwW = window.innerWidth;
     fwH = window.innerHeight;
     fw.width = Math.round(fwW * fwDpr);
@@ -358,7 +358,7 @@
 
     fwBuildSprites();
     fwResize();
-    fwBudget = PERF.low ? 620 : 1000;
+    fwBudget = PERF.mobile ? 320 : (PERF.low ? 620 : 1000);
     fwSlow = 0;
 
     fwOn = true;
@@ -396,16 +396,19 @@
     const mem = navigator.deviceMemory || 4;
     const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
     const narrow = Math.min(window.innerWidth, window.innerHeight) < 640;
-    const low = cores <= 4 || mem <= 2 || (coarse && narrow && cores <= 6);
+    const mobile = coarse || narrow;
+    const low = mobile || cores <= 4 || mem <= 2;
     return {
+      mobile: mobile,
       low: low,
-      dprCap: low ? 1.5 : 2,      /* 低端机别按 3x 渲染，像素量差一倍多 */
-      part: low ? 0.5 : 1,        /* 粒子数量系数 */
+      dprCap: mobile ? 1 : (low ? 1.5 : 2),      /* 低端机别按 3x 渲染，像素量差一倍多 */
+      part: mobile ? 0.35 : (low ? 0.5 : 1),        /* 粒子数量系数 */
       glow: !low,                 /* 低端机关掉 shadowBlur，这玩意最费 */
-      bgMs: low ? 55 : 32         /* 背景星空的重绘间隔 */
+      bgMs: mobile ? 80 : (low ? 55 : 32)         /* 背景星空的重绘间隔 */
     };
   })();
   if (PERF.low) document.documentElement.classList.add('perf-low');
+  if (PERF.mobile) document.documentElement.classList.add('perf-mobile');
   const bg = $('#bgCanvas');
   const bctx = bg ? bg.getContext('2d') : null;
   let bgW = 0, bgH = 0, dots = [];
@@ -1214,10 +1217,8 @@
 
   /* 大数字显示什么 —— 两个分支都保证「点了必增」 */
   function shownCount() {
-    const n = gCandles + pendingCount();
-    if (gLoaded && apiOk()) return n;
-    /* 还没拿到服务器的数（或暂时连不上）：至少不小于本机点过的次数 */
-    return Math.max(litCount, n);
+    // 所有浏览器展示同一份服务端总数；待上传次数单独说明。
+    return gCandles;
   }
 
   function renderShared() {
@@ -1243,7 +1244,7 @@
     el.textContent = gPendingText(head);
   }
   function gPendingText(head) {
-    return pendingCount() > 0 ? (head + '正在上传 ✦') : (head + '所有人都能看到 ✦');
+    return pendingCount() > 0 ? (head + '还有 ' + pendingCount() + ' 次待上传，暂未计入共享总数') : (head + '已同步服务器 ✦');
   }
 
   /* 把队列里的点亮次数逐个送出去，避免并发写入与限流。
@@ -1276,7 +1277,7 @@
         gFly = Math.max(0, gFly - 1);
         const ok = !!(d && d.ok);
         if (ok) {
-          gCandles = Math.max(gCandles, d.candles || 0);
+          gCandles = Math.max(gLoaded ? gCandles : 0, d.candles || 0);
           gHosts = d.hosts || 0;
           gLoaded = true;
         } else {
@@ -1318,7 +1319,7 @@
     LZX_API.state().then(d => {
       if (d && d.ok) {
         /* 本机点过但还没同步上去时，别让数字往回跳 */
-        gCandles = Math.max(gCandles, d.candles || 0);
+        gCandles = d.candles || 0;
         restoreSharedLights();
         gHosts = d.hosts || 0;
         gLoaded = true;
@@ -1334,7 +1335,7 @@
        写进去完全看不见，表现就是「大数字点了没反应」。 */
     const el = document.getElementById('lightCount') || lightNum;
     if (!el) return;
-    el.textContent = (!gLoaded && !gCandles && !litCount && !pendingCount()) ? '…' : shownCount();
+    el.textContent = (!gLoaded && !gCandles) ? '…' : shownCount();
     if (bump) {
       /* 动画挂在 .counter-num（父级）上 —— CSS 里的选择器就是 .counter-num.bump，
          之前加到 <b> 上，等于这个跳动动画从来没生效过 */
@@ -2056,7 +2057,7 @@
       const locals = notes.filter(n => n.local && !remoteIds.has(n.id));
       /* 服务器上的字段叫 name，本机用 from；样式字段缺了就按 id 推一个稳定的，
          这样即使某条留言少了样式，也不会所有人都是同一张白纸 */
-      const fixed = d.notes.map(n => {
+      const fixed = d.notes.slice().sort((a, b) => (b.at || 0) - (a.at || 0)).map(n => {
         const idNum = String(n.id || '').split('').reduce((a, ch) => a + ch.charCodeAt(0), 0);
         return {
           id: n.id, text: n.text,
@@ -2077,6 +2078,7 @@
       notes = next;
       store.set(NOTES_KEY, notes);
       renderWall(null);
+      renderNoteSync();
       if (window.__noteHint && notes.length) window.__noteHint.hidden = true;
     });
   }
@@ -2208,6 +2210,7 @@
             item.local = true; // 保留副本，直到读取接口也确认这条记录
             delete item.pending;
             renderWall(null);
+            renderNoteSync();
             store.set(NOTES_KEY, notes);
             noteDelay = 5000;
             if (!silentOnce) toast('刚才那条便签已经传上去啦 ✦');
@@ -2270,6 +2273,7 @@
             delete n.pending;
             store.set(NOTES_KEY, notes);
             renderWall(null);
+            renderNoteSync();
             toast('便签已保存到服务器，其他设备刷新即可看到 ✦');
             syncNotes();
           } else {
@@ -2280,6 +2284,7 @@
       queueNoteRetry(n);
     }
     renderWall(n.id);
+    renderNoteSync();
     if (noteText) noteText.value = '';
     if (charNow) charNow.textContent = '0';
     renderPreview();
@@ -2856,19 +2861,32 @@
   let last = performance.now();
   let bgTick = 0;
 
-  let frameFlip = 0;
+  let cakeVisible = true, slidesVisible = true;
+
+  function initAnimationVisibility() {
+    if (!window.IntersectionObserver) return;
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        const visible = entry.isIntersecting;
+        entry.target.classList.toggle('motion-paused', !visible);
+        if (entry.target.id === 'cake') cakeVisible = visible;
+        if (entry.target.id === 'memory') slidesVisible = visible;
+      });
+    }, { rootMargin: '120px' });
+    $$('.hero, .section').forEach(el => observer.observe(el));
+  }
 
   function loop(now) {
-    /* 切到后台就别画了，回来再接着跑 —— 手机省电 */
-    if (document.hidden) { requestAnimationFrame(loop); return; }
-    const dt = Math.min(50, now - last);
+    if (document.hidden) { last = now; requestAnimationFrame(loop); return; }
+    // 手机上整个绘制循环限制到 30fps，旋转仍按真实时间推进。
+    if (PERF.mobile && now - last < 1000 / 30) { requestAnimationFrame(loop); return; }
+    const dt = Math.min(80, now - last);
     last = now;
     bgTick += dt;
     if (bgTick > PERF.bgMs) { bgDraw(now); bgTick = 0; }
     if (fwOn) fwDraw(now);
-    /* 弱机隔帧算蛋糕：旋转是按 dt 累计的，所以快慢一致、只是帧数少 */
-    frameFlip ^= 1;
-    if (!PERF.low || frameFlip) { tickCake(dt); tickSlides(dt); }
+    if (cakeVisible) tickCake(dt);
+    if (slidesVisible) tickSlides(dt);
     requestAnimationFrame(loop);
   }
 
@@ -2967,7 +2985,7 @@
      另外在「回到前台」「网络恢复」「第一次连上服务器」这三个时点各补一次。
      （三处同步里调的 state() 会被 api.js 合并成一次网络请求，不会打三个。）
      ========================================================= */
-  var SYNC_MS = 20000;
+  var SYNC_MS = 10000;
   var syncTimer = null;
 
   /* 最近一次从服务器拿到的数据，存在本机。
@@ -2995,10 +3013,53 @@
 
   function syncAll() {
     if (!window.LZX_API || document.hidden) return;
-    LZX_API.state().then(cacheState);
+    LZX_API.state().then(d => {
+      if (d && d.ok) { cacheState(d); lastSharedAt = Date.now(); }
+      renderNoteSync();
+    });
     syncCandles();
     syncDecos();
     syncNotes();
+  }
+
+  let noteSyncHint = null;
+  let lastSharedAt = 0;
+  function renderNoteSync() {
+    if (!noteSyncHint) return;
+    const pending = notes.filter(n => n.pending).length;
+    const count = notes.filter(n => n.by && !n.pending).length;
+    const status = window.LZX_API ? LZX_API.isOnline() : false;
+    if (status === true && lastSharedAt) {
+      noteSyncHint.textContent = '已读取 ' + count + ' 条共享便签 · ' +
+        new Date(lastSharedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) + ' 同步';
+    } else if (status === false) {
+      noteSyncHint.textContent = '暂时未能读取服务器记录，显示本机副本；正在重试。' +
+        ((window.LZX_API && LZX_API.lastError()) ? '（' + LZX_API.lastError() + '）' : '');
+    } else noteSyncHint.textContent = '正在读取大家的便签…';
+    if (pending) noteSyncHint.textContent += ' · 本机还有 ' + pending + ' 条待上传';
+  }
+
+  function initSharedControls() {
+    const section = $('#notes');
+    if (section) {
+      const controls = document.createElement('div');
+      controls.className = 'shared-controls';
+      noteSyncHint = document.createElement('p');
+      noteSyncHint.id = 'noteSyncStatus';
+      noteSyncHint.setAttribute('role', 'status');
+      controls.appendChild(noteSyncHint);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-light';
+      button.textContent = '重新同步';
+      button.addEventListener('click', () => {
+        if (window.LZX_API) LZX_API.retryNow();
+        syncAll(); pushCandles(); scheduleNoteRetry(true);
+      });
+      controls.appendChild(button);
+      section.insertBefore(controls, wall);
+    }
+    renderNoteSync();
   }
 
   function startSync() {
@@ -3017,6 +3078,7 @@
       LZX_API.onStatus(function (st) {
         if (st === true) { syncAll(); pushCandles(); scheduleNoteRetry(true); }
         renderShared();
+        renderNoteSync();
       });
     }
     if (syncTimer) return;
@@ -3043,6 +3105,8 @@
     initBoard();
     initStickers();
     initReveal();
+    initAnimationVisibility();
+    initSharedControls();
     requestAnimationFrame(loop);
     window.addEventListener('resize', onResize, { passive: true });
 

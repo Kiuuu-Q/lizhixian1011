@@ -42,7 +42,7 @@
   var inflightState = null;   /* 同一时刻的多处 state() 合并成一次请求 */
 
   /* 超时：读宽松、写适中、上传很宽松（手机流量下大图要慢得多） */
-  var T_GET = 12000;          /* 读：服务端偶尔要 4~5 秒，12 秒够用；太长会让「本机模式」白挂 */
+  var T_GET = 30000;          /* 手机弱网保留足够等待时间，避免连续取消仍可能成功的读取 */
   var T_POST = 15000;
   var T_UPLOAD = 60000;
 
@@ -115,7 +115,7 @@
         signal: ctl ? ctl.signal : undefined
       };
       if (body) {
-        opt.headers = { 'Content-Type': 'application/json' };
+        opt.headers = { 'Content-Type': 'text/plain;charset=UTF-8' }; // JSON 内容不变，避免跨域预检多一次网络往返
         opt.body = JSON.stringify(body);
       }
       /* ⚠️ 加一个随机参数绕过中间层缓存 —— 曾经不带参数时，
@@ -125,9 +125,9 @@
         return r.json().then(function (j) {
           clearTimeout(timer);
           if (!r.ok || !j || j.ok !== true) {
-            noteErr((j && (j.error || j.message)) || ('服务响应异常（HTTP ' + r.status + '）'));
+            noteErr((j && (j.err || j.error || j.message)) || ('服务响应异常（HTTP ' + r.status + '）'));
             // 业务拒绝不表示断网；仍保留写入队列，但不能声称已经上传成功。
-            if (r.status >= 500 || r.status === 429 || r.ok) markDown();
+            if (r.status >= 500 || r.status === 429 || (r.ok && (!j || typeof j.ok !== 'boolean'))) markDown();
             return resolve(null);
           }
           if (path === '/api/state') {
