@@ -2059,8 +2059,8 @@
   ];
 
   const NOTES_KEY = 'lzx_notes';
-  const ANONYMOUS_CLEAN_AT = 1791560319150;
-  function oldAnonymous(n) { const name = String(n.from || n.name || '').trim(); return (!name || name === '匿名') && (!n.at || n.at <= ANONYMOUS_CLEAN_AT); }
+  const NOTE_CLEAN_AT = 1791561087048;
+  function removedByNoteCleanup(n) { const name = String(n.from || n.name || '').trim().toLowerCase(); return !['邓蕙荞', 'dhq'].includes(name) && (!n.at || n.at <= NOTE_CLEAN_AT); }
   const DEFAULT_NOTES = [
     { id: 'seed1', text: '生日快乐呀！愿你今年所有的期待都有着落 ♡', from: '', c: 0, s: 'round', m: 'paper', tilt: -3.1 },
     { id: 'seed2', text: '新的一岁，继续闪闪发光', from: '一直看着你的人', c: 2, s: 'heart', m: 'gloss', tilt: 2.6 },
@@ -2083,8 +2083,8 @@
   let notes = store.get(NOTES_KEY, null);
   if (!notes || !notes.length) notes = DEFAULT_NOTES.slice();
   /* 没有 by 的都是内置的示例便签，标成「本机」—— 只有这种能在本地直接撕掉 */
-  if (!store.get('lzx_anonymous_cleaned_m', false)) { store.set('lzx_notes_before_anonymous_cleanup_m', notes); store.set('lzx_anonymous_cleaned_m', true); }
-  notes = notes.filter(n => !oldAnonymous(n));
+  if (!store.get('lzx_notes_cleaned_n', false)) { store.set('lzx_notes_before_cleanup_n', notes); store.set('lzx_notes_cleaned_n', true); }
+  notes = notes.filter(n => !removedByNoteCleanup(n));
   store.set(NOTES_KEY, notes);
   notes.forEach(n => { if (!n.by) n.local = true; });
 
@@ -2094,10 +2094,10 @@
     LZX_API.state().then(d => {
       if (!d || !d.ok || !Array.isArray(d.notes)) return;
       const remoteIds = new Set(d.notes.map(n => n.id));
-      const locals = notes.filter(n => n.local && !oldAnonymous(n) && !remoteIds.has(n.id));
+      const locals = notes.filter(n => n.local && !removedByNoteCleanup(n) && !remoteIds.has(n.id));
       /* 服务器上的字段叫 name，本机用 from；样式字段缺了就按 id 推一个稳定的，
          这样即使某条留言少了样式，也不会所有人都是同一张白纸 */
-      const fixed = d.notes.filter(n => !oldAnonymous(n)).sort((a, b) => (b.at || 0) - (a.at || 0)).map(n => {
+      const fixed = d.notes.filter(n => !removedByNoteCleanup(n)).sort((a, b) => (b.at || 0) - (a.at || 0)).map(n => {
         const idNum = String(n.id || '').split('').reduce((a, ch) => a + ch.charCodeAt(0), 0);
         return {
           id: n.id, text: n.text,
@@ -2218,7 +2218,7 @@
   function renderWall(newId) {
     if (!wall) return;
     wall.innerHTML = '';
-    notes.filter(n => !oldAnonymous(n)).forEach(n => wall.appendChild(buildNoteCard(n, n.id === newId)));
+    notes.filter(n => !removedByNoteCleanup(n)).forEach(n => wall.appendChild(buildNoteCard(n, n.id === newId)));
     if (emptyTip) emptyTip.hidden = notes.length > 0;
   }
 
@@ -2345,7 +2345,7 @@
       var have = {};
       notes.forEach(function (n) { have[n.id] = 1; });
       cached.notes.slice().reverse().forEach(function (n) {
-        if (!n.id || have[n.id] || oldAnonymous(n)) return;
+        if (!n.id || have[n.id] || removedByNoteCleanup(n)) return;
         notes.unshift({
           id: n.id, text: n.text, from: n.from || n.name || '',
           c: (typeof n.c === 'number') ? n.c : 0,
