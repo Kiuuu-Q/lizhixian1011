@@ -2,12 +2,16 @@
    声音引擎：Web Audio API 现场合成
    ---------------------------------------------------------
    两个部分：
-     1. 背景音乐 —— 八音盒版的《生日快乐》，**三层编配**（刻意从简）：
-          ① 主旋律  八音盒音色，唯一的主角，音符之间要留缝
-          ② 和声    只给 ≥2 拍的长音，严格取和弦音，音量很轻
-          ③ 低音    每个和弦换一次，低八度长音，只当地基
+     1. 背景音乐 —— 八音盒版的《生日快乐》，**六声部编配**（听感要「重奏」不要「单音」）：
+          ① 主旋律   八音盒音色，唯一的主角，音符之间要留缝
+          ② 高八度    跟着旋律走的高八度加厚层（音乐盒的「双层梳齿」），清亮、很轻
+          ③ 和声      只给 ≥2 拍的长音，**双音**（三度 + 五度），严格取和弦音
+          ④ 低音      每个和弦换一次，低八度长音，只当地基
+          ⑤ 竖琴滑音  每轮开头的上行刮奏（引子），像音乐盒上弦
+          ⑥ 风铃      长音后段点一颗高音铃铛，制造「星光一闪」的瞬间
+        —— 旧版只有 ①③④，听感单薄；②⑤⑥ 就是「多声部 + 多几种音色」。
 
-     ⚠️ 「音乐乱」踩过的三个坑，别再犯：
+     ⚠️ 「音乐乱」踩过的四个坑，别再犯：
        · 时值乘大系数（曾经 1.9 / 1.5）→ 音符互相叠，再叠上混响就糊成一团。
          现在只多给 5%，颗粒感全靠「音与音之间那道缝」。
        · 挂 DynamicsCompressor → 八音盒的瞬态被「压一下松一下」，
@@ -15,6 +19,8 @@
        · 用递归 setTimeout 排下一轮 → 页面一卡（放烟花时动辄几百毫秒）就晚触发，
          下一轮起点成了过去时刻，整轮音符被一次性倾泻出来 = 抢拍糊成一团。
          现在是**前瞻调度**：维护绝对时间轴，定期检查「未来 6 秒内排满了没有」。
+       · **往中音区塞密集的琶音 / 弦垫** → 和主旋律抢音域，立刻发浑。
+         所以新增声部一律**错开音区**：高八度走上面、和声走下面、滑音只做引子。
      2. 音效 —— 烟花升空的「咻」与炸开的「砰」，由烟花引擎逐朵触发
 
    为什么全部用合成、不用音频文件：
@@ -67,10 +73,14 @@
   ];
 
   var BEAT = 0.72;          /* 一拍的秒数 → 约 83 BPM */
-  var VOL = 0.40;           /* 总音量（压缩器去掉了、声部也少了，可以抬一点） */
-  var MEL_VOL = 0.30;       /* 主旋律 —— 唯一的主角 */
-  var HARM_VOL = 0.045;     /* 和声 —— 很轻，只在长音处托一下 */
-  var BASS_VOL = 0.05;      /* 低音 —— 只当地基 */
+  var VOL = 0.38;           /* 音乐总增益（声部变多了，收一点给峰值留余量） */
+  var MEL_VOL = 0.28;       /* ① 主旋律 —— 主角 */
+  var MEL2_VOL = 0.085;     /* ② 高八度加厚 —— 约为主旋律的三成 */
+  var HARM_VOL = 0.055;     /* ③ 和声（每个音） */
+  var BASS_VOL = 0.055;     /* ④ 低音 —— 只当地基 */
+  var GLISS_VOL = 0.042;    /* ⑤ 竖琴滑音 —— 引子，极轻 */
+  var CHIME_VOL = 0.032;    /* ⑥ 风铃 —— 点一下就走 */
+  var LEAD = 0.46;          /* 每轮开头的引子（竖琴刮奏）时长 */
   var TAIL = 2.5 * BEAT;    /* 一轮之间留点呼吸（时值收紧了，这里补回来一点） */
 
   /* 当前还活着的振荡器。暂停 / 重新开始时要把它们**真正停掉** ——
@@ -239,59 +249,141 @@
     track(osc);
   }
 
+  /* ---------- ② 高八度加厚：比 bell 更「清亮」，泛音少而高 ----------
+     音乐盒里有「双层梳齿」，同一个音会带一层高八度。这一层就是它：
+     只两个泛音、衰减更快，听起来是「叮」的一声亮点，而不是又一条旋律。 */
+  function bell2(freq, at, dur, vol) {
+    var partials = [[1, 1.00, 1.00], [2.00, 0.20, 0.46]];
+    for (var i = 0; i < partials.length; i++) {
+      var p = partials[i];
+      var osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq * p[0];
+      var g = ctx.createGain();
+      var end = at + Math.max(dur * p[2], 0.06);
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(Math.max(vol * p[1], 0.0002), at + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, end);
+      osc.connect(g); g.connect(musicGain);
+      osc.start(at); osc.stop(end + 0.04);
+      track(osc);
+    }
+  }
+
+  /* ---------- ⑥ 风铃：高音铃铛 ----------
+     泛音取「非整数比」（2.76 / 5.40）—— 这是钟、铃、玻璃的特征音程，
+     整数比会听成乐音（就变成又一条旋律了）。很短、很轻，一颗就够。 */
+  function chime(freq, at, vol) {
+    var partials = [[1, 1.00, 1.00], [2.76, 0.26, 0.55], [5.40, 0.08, 0.30]];
+    for (var i = 0; i < partials.length; i++) {
+      var p = partials[i];
+      var osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq * p[0];
+      var g = ctx.createGain();
+      var end = at + 0.85 * p[2];
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(Math.max(vol * p[1], 0.0002), at + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, end);
+      osc.connect(g); g.connect(musicGain);
+      osc.start(at); osc.stop(end + 0.05);
+      track(osc);
+    }
+  }
+
+  /* ---------- ⑤ 竖琴滑音：一串极短的八音盒音，从低到高（或从高到低）扫过 ----------
+     只放在每轮的**开头**当引子 —— 那一段主旋律还没进来，不会抢音域。
+     越往后稍微响一点，像刮奏收尾那一下「提」起来。 */
+  function gliss(fromMidi, toMidi, at, step, vol) {
+    var dir = toMidi >= fromMidi ? 1 : -1;
+    var n = Math.floor(Math.abs(toMidi - fromMidi) / step);
+    var gap = LEAD / Math.max(n, 1);
+    for (var i = 0; i <= n; i++) {
+      var m = fromMidi + dir * i * step;
+      bell(freqOf(nameOf(m)), at + i * gap, 0.5, vol * (0.7 + 0.6 * i / Math.max(n, 1)));
+    }
+  }
+
   /* 大三和弦的音（本项目用到的和弦都是大三和弦） */
   function triad(rootName) {
     var r = midiOf(rootName);
     return [nameOf(r), nameOf(r + 4), nameOf(r + 7)];
   }
 
-  /* 给旋律音配一个「下方最近的和弦音」。
-     ⚠️ 找不到就返回 null（= 这个音不配和声）。
-        旧版在找不到时兜底成「旋律下方 5 个半音」，那是纯拍脑袋 ——
+  /* 给旋律音配「下方最近的两个和弦音」（三度 + 五度）。
+     ⚠️ 找不到就少配一个（宁可只有一层，也不许塞不对的音）。
+        旧版曾经在找不到时兜底成「旋律下方 5 个半音」，那是纯拍脑袋 ——
         经常落在一个既不属于和弦、也不属于调内的音上，一听就「跑调 / 发乱」。
-        宁可少一层和声，也不能塞一个不对的音。 */
-  function harmonyFor(melodyName, chordRoot) {
+        宁可少一层和声，也不能塞一个不对的音。
+     ⚠️ 两个音不能是同一个音名（那样只是加厚，不是和声）—— 遇到就跳到下一个候选。 */
+  function harmonySet(melodyName, chordRoot) {
     var m = midiOf(melodyName);
     var tones = triad(chordRoot);
-    var best = null;
+    var cands = [];
     for (var i = 0; i < tones.length; i++) {
       var c = midiOf(tones[i]);
-      /* 每个和弦音各往下试两个八度，挑「比旋律低 3~16 个半音」里最高的那个 */
+      /* 每个和弦音各往下试两个八度，只保留「比旋律低 3~16 个半音」的 */
       for (var k = 0; k <= 2; k++) {
         var cand = c - k * 12;
         var d = m - cand;
         if (d < 3 || d > 16) continue;
-        if (best === null || cand > best) best = cand;
+        if (cands.indexOf(cand) < 0) cands.push(cand);
       }
     }
-    return best;
+    cands.sort(function (a, b) { return b - a; });   /* 从高到低：先取贴近旋律的 */
+    var out = [];
+    for (var j = 0; j < cands.length && out.length < 2; j++) {
+      var nm = nameOf(cands[j]).replace(/-?\d+$/, '');
+      var dup = false;
+      for (var q = 0; q < out.length; q++) {
+        if (nameOf(out[q]).replace(/-?\d+$/, '') === nm) { dup = true; break; }
+      }
+      if (!dup) out.push(cands[j]);
+    }
+    return out;
   }
 
-  /* ---------- 排一轮：三层编配。起点 from 由调度器给定（一定是未来时刻）----------
+  /* ---------- 排一轮：六声部编配。起点 from 由调度器给定（一定是未来时刻）----------
      ⚠️ 音的长度**不要乘大系数**：八音盒的颗粒感来自「音符之间有缝」。
         旧版把时值乘 1.9（和声 1.5），一个音还没落下一个就压上来，
         再叠上长混响，听感就是糊成一团「乱」。现在只多给 5%。 */
   function scheduleCycle(from) {
-    /* 先算出每个旋律音的起始时刻，所有声部都对齐这条时间轴 */
-    var times = [from];
+    /* 先算出每个旋律音的起始时刻，所有声部都对齐这条时间轴。
+       前面空出的 LEAD 是留给竖琴滑音引子的。 */
+    var times = [from + LEAD];
     for (var i = 0; i < SONG.length; i++) times.push(times[i] + SONG[i][1] * BEAT);
 
-    /* ① 主旋律 —— 唯一的主角，颗粒分明 */
+    /* ⑤ 引子：竖琴上行刮奏（C4 → C6，全音阶）。
+          放在最前面 —— 那会儿主旋律还没进来，抢不到音域；
+          「上弦 → 开奏」也格外有仪式感。 */
+    gliss(60, 84, from, 3, GLISS_VOL);
+
+    /* ① 主旋律 + ② 高八度加厚 + ⑥ 风铃点缀 */
     for (var m = 0; m < SONG.length; m++) {
-      bell(freqOf(SONG[m][0]), times[m], SONG[m][1] * BEAT * 1.05, MEL_VOL);
+      var f = freqOf(SONG[m][0]);
+      var beats = SONG[m][1];
+      var dur = beats * BEAT;
+      /* ① 主角，颗粒分明 */
+      bell(f, times[m], dur * 1.05, MEL_VOL);
+      /* ② 高八度：跟着旋律加厚，音量只有主旋律的三成 ——
+            这就是音乐盒「双层梳齿」的做法，听感立刻从「单音」变「合奏」。 */
+      bell2(f * 2, times[m], dur * 0.85, MEL2_VOL);
+      /* ⑥ 风铃：只在 2 拍以上的长音上，在音的后段点一颗高音铃铛 */
+      if (beats >= 2) chime(f * 2, times[m] + dur * 0.55, CHIME_VOL);
     }
 
-    /* ② 和声 —— 只给「2 拍及以上」的长音。
+    /* ③ 和声 —— 只给「2 拍及以上」的长音，而且给**双音**（三度 + 五度）。
           给 1 拍的音也配的话，和声就和旋律一样密，两个声部在同一个音区抢，
           听感立刻发浑；只留给长音，它才起得到「托一下」的作用。 */
     for (var h = 0; h < SONG.length; h++) {
       if (SONG[h][1] < 2) continue;
-      var hv = harmonyFor(SONG[h][0], CHORDS[h]);
-      if (hv === null) continue;
-      soft(freqOf(nameOf(hv)), times[h], SONG[h][1] * BEAT * 0.9, HARM_VOL);
+      var hs = harmonySet(SONG[h][0], CHORDS[h]);
+      for (var k = 0; k < hs.length; k++) {
+        soft(freqOf(nameOf(hs[k])), times[h], SONG[h][1] * BEAT * 0.9, HARM_VOL);
+      }
     }
 
-    /* ③ 低音 —— 每个和弦段一个长音，收在段内，绝不拖进下一个和弦 */
+    /* ④ 低音 —— 每个和弦段一个长音，收在段内，绝不拖进下一个和弦 */
     var segStart = 0;
     for (var s = 1; s <= SONG.length; s++) {
       if (s < SONG.length && CHORDS[s] === CHORDS[segStart]) continue;
@@ -313,7 +405,7 @@
   var CYCLE = (function () {
     var t = 0;
     for (var i = 0; i < SONG.length; i++) t += SONG[i][1] * BEAT;
-    return t + TAIL;
+    return t + TAIL + LEAD;      /* ⚠️ 别忘了 LEAD（引子），否则下一轮会提前挤进来 */
   })();
   var LOOKAHEAD = 6;
   var nextAt = 0, lookTimer = null;
@@ -391,74 +483,111 @@
     tw.start(at); tw.stop(at + dur + 0.05);
   }
 
+  /* ---------- 烟花爆炸 ----------
+     ⚠️ 「像打铁板」的教训（2026-10-09）：
+       旧版用**正弦从 185Hz 滑到 36Hz** 做低频层。正弦是**有音高**的，
+       2.4 个八度的滑音听上去就是「哐 ——」一声**敲金属板**。
+       真实的爆炸**完全没有音高**，它是宽带噪声：
+         ① 极短的起爆冲击（几毫秒内起，能量压在 100Hz 以下）= 「胸口一震」
+         ② 中低频轰鸣（100~500Hz）缓慢衰减 = 「轰」的肉
+         ③ 一点点高频碎裂声，**音量压到主体的三成以下**，多一分就是金属味
+         ④ 几十 Hz 的长尾滚动 = 大烟花和小烟花的区别所在
+         ⑤ 空间回声，而且**只把低频弹回来**（远处传来的声音本来就听不到高频）
+         ⑥ 「噼里啪啦」要的是**一颗颗随机的小脉冲**，不是一片持续的「嘶——」
+       所以整条链路**一个正弦振荡器都没有**，全部是噪声 + 滤波。
+       峰值标定要和音乐合计不越过 1.0。 */
   function boom(big, toneIndex) {
     if (userMuted || !ctx) return;
     var now = ctx.currentTime;
     /* 同一时刻炸太多会糊成一片噪音，做个节流 + 并发上限 */
-    if (now - lastBoom < 0.075 || boomLive >= 5) return;
+    if (now - lastBoom < 0.06 || boomLive >= 6) return;
     lastBoom = now;
     boomLive++;
-    setTimeout(function () { boomLive--; }, 900);
+    setTimeout(function () { boomLive--; }, 1500);
 
-    /* ⚠️ 音效现在直通 master（1.0），不再被音乐的淡入衰减 ——
-       峰值要和音乐（0.40）加在一起不越过 1.0，所以定在 0.36 / 0.22。 */
-    var lvl = big ? 0.36 : 0.22;
-    /* 每朵花的音高略有不同，不然一串烟花听着像复读 */
-    var detune = 0.88 + Math.random() * 0.3;
-    /* 色调微调音色：暖色偏低沉，冷色偏清脆 */
-    var bright = 1;
-    if (typeof toneIndex === 'number') {
-      bright = toneIndex >= 3 && toneIndex <= 5 ? 0.82 : 1.12;
+    var lvl = big ? 0.34 : 0.20;
+    /* 每朵花的音色略有不同，不然一串烟花听着像复读 */
+    var detune = 0.88 + Math.random() * 0.26;
+    /* 色调：暖色（前几个）更闷更沉、尾巴更长；冷色更清亮干脆 */
+    var warm = !(typeof toneIndex === 'number') || toneIndex <= 2;
+    var tail = (big ? 1 : 0.62) * (warm ? 1.15 : 0.85);
+
+    /* 一层「噪声 + 滤波 + 包络」。整条链路只有噪声，没有振荡器 → 天然无音高。 */
+    function layer(type, f0, f1, q, peak, atk, dec) {
+      var src = ctx.createBufferSource();
+      src.buffer = noise();
+      src.playbackRate.value = detune;      /* 每朵花的颗粒感都不一样 */
+      var flt = ctx.createBiquadFilter();
+      flt.type = type;
+      flt.Q.value = q;
+      flt.frequency.setValueAtTime(f0, now);
+      if (f1 !== f0) flt.frequency.exponentialRampToValueAtTime(f1, now + dec);
+      var g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), now + Math.max(atk, 0.004));
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dec);
+      src.connect(flt); flt.connect(g);
+      src.start(now); src.stop(now + dec + 0.08);
+      return g;
     }
 
-    /* ① 低频推力：那一下「闷」的冲击 */
-    var thump = ctx.createOscillator();
-    thump.type = 'sine';
-    thump.frequency.setValueAtTime(185 * detune, now);
-    thump.frequency.exponentialRampToValueAtTime(36 * detune, now + 0.26);
-    var tg = ctx.createGain();
-    tg.gain.setValueAtTime(0.0001, now);
-    tg.gain.exponentialRampToValueAtTime(lvl * 0.85, now + 0.012);
-    tg.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
-    thump.connect(tg); tg.connect(bus);
-    thump.start(now); thump.stop(now + 0.5);
+    /* ① 起爆冲击 —— 无音高的超低频，4ms 起、0.34s 落。「胸口一震」就是它 */
+    layer('lowpass', 130 * detune, 62 * detune, 0.7,
+          lvl * 0.95, 0.004, 0.34 * tail + 0.16).connect(bus);
 
-    /* ② 爆裂：宽频噪声，带通从高扫到低 —— 「炸开」的那层 */
-    var src = ctx.createBufferSource();
-    src.buffer = noise();
-    var lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.setValueAtTime(2600 * bright, now);
-    lp.frequency.exponentialRampToValueAtTime(320, now + 0.5);
-    var ng = ctx.createGain();
-    ng.gain.setValueAtTime(0.0001, now);
-    ng.gain.exponentialRampToValueAtTime(lvl * 0.7, now + 0.008);
-    ng.gain.exponentialRampToValueAtTime(0.0001, now + (big ? 0.72 : 0.5));
-    src.connect(lp); lp.connect(ng); ng.connect(bus);
-    src.start(now); src.stop(now + 0.8);
+    /* ② 轰鸣主体 —— 中低频宽带，缓慢衰减，这是「轰」的肉。
+          低通从 1100Hz 收到 260Hz，模拟爆燃迅速转为低频轰响。 */
+    var body = layer('lowpass', 1100 * detune, 260 * detune, 0.6,
+                     lvl * 0.78, 0.016, 0.62 * tail + 0.3);
+    body.connect(bus);
 
-    /* 远处回声：真实烟花炸完，隔两三百毫秒会从楼宇/山谷里弹一下回来。
-       就这一下，让声音一下子「有空间感」，不再是耳边的干响。 */
-    var dly = ctx.createDelay(1.0);
-    dly.delayTime.value = 0.24 + Math.random() * 0.14;
+    /* ③ 爆裂细节 —— 极短极轻的高频「啪」。这是唯一带高频的一层，
+          音量压到主体的三成以下，多一分就变回金属板。 */
+    layer('bandpass', 1500 * detune, 620 * detune, 1.1,
+          lvl * 0.26, 0.005, 0.17).connect(bus);
+
+    /* ④ 尾音滚动 —— 几十 Hz 的长尾，沉下去的那口气。
+          大烟花 1.8~2.3s，小烟花 0.8s 上下。 */
+    layer('lowpass', 62 * detune, 48 * detune, 0.9,
+          lvl * 0.5 * (big ? 1 : 0.6), 0.05,
+          (big ? 1.9 : 0.85) * (warm ? 1.2 : 0.8)).connect(bus);
+
+    /* ⑤ 空间回声 —— 只把低频弹回来（远处传来的声音本来就没有高频），
+          再反馈一次，就是「楼宇之间回荡」的那种厚度。 */
+    var dly = ctx.createDelay(1.2);
+    dly.delayTime.value = 0.3 + Math.random() * 0.18;
+    var ef = ctx.createBiquadFilter();
+    ef.type = 'lowpass';
+    ef.frequency.value = 520;
     var dg = ctx.createGain();
-    dg.gain.value = big ? 0.20 : 0.12;
-    ng.connect(dly); dly.connect(dg); dg.connect(bus);
+    dg.gain.value = big ? 0.26 : 0.16;
+    var fb = ctx.createGain();
+    fb.gain.value = 0.22;
+    body.connect(dly); dly.connect(ef); ef.connect(dg); dg.connect(bus);
+    ef.connect(fb); fb.connect(dly);
 
-    /* ③ 噼啪余响：大烟花才有，一团细碎的火星光 */
+    /* ⑥ 噼啪余烬（大烟花）—— 一颗颗随机的小脉冲，不是一片持续的「嘶——」。
+          在一段噪声上点一串 gain 自动化，听感就是火星光在头顶依次熄灭。 */
     if (big) {
       var cr = ctx.createBufferSource();
       cr.buffer = noise();
       var hp = ctx.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = 2400;
+      hp.type = 'bandpass';
+      hp.frequency.value = 3000 + Math.random() * 900;
+      hp.Q.value = 1.3;
       var cg = ctx.createGain();
-      cg.gain.setValueAtTime(0.0001, now + 0.16);
-      cg.gain.exponentialRampToValueAtTime(lvl * 0.26, now + 0.3);
-      cg.gain.exponentialRampToValueAtTime(0.0001, now + 1.7);
+      cg.gain.setValueAtTime(0.0001, now);
+      var pops = 10 + Math.floor(Math.random() * 6);
+      var span = 1.5 * (warm ? 1.2 : 0.9);
+      for (var i = 0; i < pops; i++) {
+        var t = now + 0.2 + Math.random() * span;
+        var amp = lvl * (0.05 + Math.random() * 0.14);
+        cg.gain.setValueAtTime(0.0001, t);
+        cg.gain.exponentialRampToValueAtTime(amp, t + 0.006);
+        cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.03 + Math.random() * 0.05);
+      }
       cr.connect(hp); hp.connect(cg); cg.connect(bus);
-      cr.start(now); cg.gain.setValueAtTime(0.0001, now);
-      cr.stop(now + 1.8);
+      cr.start(now); cr.stop(now + span + 0.4);
     }
   }
 

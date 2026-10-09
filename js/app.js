@@ -898,14 +898,21 @@
     });
   }
 
-  /* 拉取服务器上的装饰（大家放的都在这里） */
+  /* 拉取服务器上的装饰（大家放的都在这里）。
+     ⚠️ 这里**不能要求 length > 0**：服务器上被撤空时本机也得跟着变空，
+        否则会一直挂着一个早就没人要的装饰。
+     指纹是为了挡住「数据没变也重建 DOM」—— 现在每 20 秒轮询一次，
+     每次都重建会让蛋糕上的装饰闪一下，很烦。 */
+  var decoSig = '';
   function syncDecos() {
     if (!window.LZX_API) return;
     LZX_API.state().then(d => {
-      if (d && d.ok && Array.isArray(d.deco) && d.deco.length) {
-        diyItems = d.deco;
-        renderDecos();
-      }
+      if (!d || !d.ok || !Array.isArray(d.deco)) return;
+      const sig = d.deco.map(x => x.id + '|' + x.k + '|' + Math.round(x.a || 0) + '|' + Math.round(x.R || 0)).join(',');
+      if (sig === decoSig) return;
+      decoSig = sig;
+      diyItems = d.deco;
+      renderDecos();
     });
   }
 
@@ -1970,11 +1977,18 @@
           by: n.by, at: n.at
         };
       });
-      notes = fixed.concat(locals);
+      const next = fixed.concat(locals);
+      /* 指纹：数据没变就不重建 DOM。轮询每 20 秒一次，
+         重建会让整面便签墙闪一下，还会打断刚贴上去的那张的动画。 */
+      const sig = next.map(n => n.id + '|' + n.text + '|' + n.from).join('~');
+      if (sig === notesSig) return;
+      notesSig = sig;
+      notes = next;
       renderWall(null);
       if (window.__noteHint && notes.length) window.__noteHint.hidden = true;
     });
   }
+  var notesSig = '';
   let sel = { c: 0, s: 'round', m: 'paper' };
 
   function noteHTML(n) {
@@ -2766,6 +2780,42 @@
     syncBgmBtn();
   }
 
+  /* =========================================================
+     统一同步：让「大家的东西」自己长出来
+     ---------------------------------------------------------
+     ⚠️ 旧版三处同步（蜡烛 / 蛋糕装饰 / 便签）都**只在打开页面时拉一次**，
+        之后永不刷新 —— 于是「别人写的便签，我这边得重新打开页面才能看到」。
+     现在改成轮询：每 20 秒一次（页面切到后台就停，省电省流量），
+     另外在「回到前台」「网络恢复」「第一次连上服务器」这三个时点各补一次。
+     （三处同步里调的 state() 会被 api.js 合并成一次网络请求，不会打三个。）
+     ========================================================= */
+  var SYNC_MS = 20000;
+  var syncTimer = null;
+
+  function syncAll() {
+    if (!window.LZX_API || document.hidden) return;
+    syncCandles();
+    syncDecos();
+    syncNotes();
+  }
+
+  function startSync() {
+    syncAll();
+    /* 数据服务恢复的一刻，把落下的数据补上（api.js 重试成功时会通知这里） */
+    if (window.LZX_API && LZX_API.onStatus) {
+      LZX_API.onStatus(function (st) { if (st === true) syncAll(); });
+    }
+    if (syncTimer) return;
+    syncTimer = setInterval(syncAll, SYNC_MS);
+
+    /* 回到前台：立刻拉一次（手机上切来切去最容易错过别人的更新） */
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) syncAll();
+    });
+    /* 网络恢复：立刻拉一次 */
+    window.addEventListener('online', function () { syncAll(); });
+  }
+
   function init() {
     buildTitle();
     bgResize();
@@ -2783,6 +2833,9 @@
     window.addEventListener('resize', onResize, { passive: true });
 
     if (lightBtn && litCount === 0) lightBtn.classList.add('breathe');
+
+    /* 打开页面就把「大家的共同记忆」接上，并且**持续**保持同步 */
+    startSync();
   }
 
   if (document.readyState === 'loading') {
