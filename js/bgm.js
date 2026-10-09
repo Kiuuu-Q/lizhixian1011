@@ -610,25 +610,31 @@
       return g;
     }
 
+    /* ⚠️⚠️ 各层的 gain 系数都乘了大约 3 倍 —— 这不是「调大声」，是**补偿滤波衰减**。
+       白噪声的能量均匀铺在 0~22kHz 上，一个 130Hz 的低通只放行千分之几的能量：
+       实测「lvl 设 0.55」时输出峰值只有 **0.19**，听感就是「不够大」。
+       所以 gain 要用 >1 的值把被滤掉的部分补回来（Web Audio 内部是浮点，不会因此削波；
+       只在整个信号最终超过 ±1 时才削，那个由实测峰值把关）。 */
     /* ① 起爆冲击 —— 无音高的超低频，4ms 起、0.34s 落。「胸口一震」就是它 */
     layer('lowpass', 130 * detune, 62 * detune, 0.7,
-          lvl * 0.95, 0.004, 0.34 * tail + 0.16).connect(bus);
+          lvl * 3.0, 0.004, 0.34 * tail + 0.16).connect(bus);
 
-    /* ② 轰鸣主体 —— 中低频宽带，缓慢衰减，这是「轰」的肉。
-          低通从 1100Hz 收到 260Hz，模拟爆燃迅速转为低频轰响。 */
-    var body = layer('lowpass', 1100 * detune, 260 * detune, 0.6,
-                     lvl * 0.78, 0.016, 0.62 * tail + 0.3);
+    /* ② 轰鸣主体 —— 「轰」的肉。低通起点从 1100 抬到 1800Hz，
+          让更多中频能量活下来（手机小喇叭放不出低频，指望的就是这一段）。 */
+    var body = layer('lowpass', 1800 * detune, 420 * detune, 0.6,
+                     lvl * 2.2, 0.016, 0.62 * tail + 0.3);
     body.connect(bus);
 
-    /* ③ 爆裂细节 —— 极短极轻的高频「啪」。这是唯一带高频的一层，
-          音量压到主体的三成以下，多一分就变回金属板。 */
-    layer('bandpass', 1500 * detune, 620 * detune, 1.1,
-          lvl * 0.26, 0.005, 0.17).connect(bus);
+    /* ③ 爆裂「啪」 —— **手机唯一真正放得出来的那一层**（扬声器对 2~4kHz 最灵敏）。
+          频段从 1500→620 抬到 2800→900Hz，音量也从「主体的三成」抬到跟主体一个量级。
+          ⚠️ 旧版把这层压得极轻，结果在手机上等于没爆炸声。 */
+    layer('bandpass', 2800 * detune, 900 * detune, 1.0,
+          lvl * 1.8, 0.004, 0.17).connect(bus);
 
     /* ④ 尾音滚动 —— 几十 Hz 的长尾，沉下去的那口气。
           大烟花 1.8~2.3s，小烟花 0.8s 上下。 */
     layer('lowpass', 62 * detune, 48 * detune, 0.9,
-          lvl * 0.5 * (big ? 1 : 0.6), 0.05,
+          lvl * 3.5 * (big ? 1 : 0.6), 0.05,
           (big ? 1.9 : 0.85) * (warm ? 1.2 : 0.8)).connect(bus);
 
     /* ⑤ 空间回声 —— 只把低频弹回来（远处传来的声音本来就没有高频），
@@ -652,7 +658,7 @@
       cr.buffer = noise();
       var hp = ctx.createBiquadFilter();
       hp.type = 'bandpass';
-      hp.frequency.value = 3000 + Math.random() * 900;
+      hp.frequency.value = 3400 + Math.random() * 1100;
       hp.Q.value = 1.3;
       var cg = ctx.createGain();
       cg.gain.setValueAtTime(0.0001, now);
@@ -660,7 +666,7 @@
       var span = 1.5 * (warm ? 1.2 : 0.9);
       for (var i = 0; i < pops; i++) {
         var t = now + 0.2 + Math.random() * span;
-        var amp = lvl * (0.05 + Math.random() * 0.14);
+        var amp = lvl * (0.35 + Math.random() * 0.75);   /* 同样补偿滤波衰减（带通 3kHz） */
         cg.gain.setValueAtTime(0.0001, t);
         cg.gain.exponentialRampToValueAtTime(amp, t + 0.006);
         cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.03 + Math.random() * 0.05);
@@ -758,7 +764,9 @@
     a.volume = 0;
     var pr = a.play();
     if (pr && pr.catch) pr.catch(function () { failToSynth(); });
-    fadeAudio(BGM_VOL, 1600);
+    /* 淡入从 1.6s 收到 1.0s：用户要求「烟花绽放 2 秒后音乐才开始」，
+       淡入太长会让音乐「其实早就隐约在了」，听不出那个分界。 */
+    fadeAudio(BGM_VOL, 1000);
   }
 
   function startSynth() {
