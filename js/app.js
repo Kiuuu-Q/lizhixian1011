@@ -1624,7 +1624,11 @@
     if (!t) return false;
     var v = String(t).trim();
     if (/\.(jpe?g|png|gif|webp|heic|bmp|tiff?)$/i.test(v)) return true;
-    if (/^(img|dsc|dscf|pxl|photo|image|screenshot|微信图片|截屏|照片)[-_ ]?\d*$/i.test(v)) return true;
+    /* 相机/手机/无人机的默认名：前缀 + 一串「数字/下划线/横线」。
+       · 后缀用 `[\d\-_]+` 而不是 `\d+` —— 要能吃掉 `PXL_20240101_120000` 这种两段下划线。
+       · **必须真的带后缀**，所以单独一个「IMG」「照片」「截屏」不会被误伤。 */
+    if (/^(img|dsc|dscf|pxl|photo|image|微信图片|截屏|照片)[-_ ]?[\d\-_]+$/i.test(v)) return true;
+    if (/^(screenshot|screen ?shot)$/i.test(v)) return true;
     if (/^dji_/i.test(v)) return true;
     if (/^[0-9a-f]{24,}$/i.test(v)) return true;
     if (/^[\d_\-]{12,}$/.test(v)) return true;
