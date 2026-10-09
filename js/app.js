@@ -2539,7 +2539,7 @@
       boardCloudRevision = d.revision || '';
       boardCloudOnline = true; boardCloudError = !!uploadFailure; boardCloudMessage = uploadFailure;
     } catch (e) { boardCloudOnline = false; boardCloudError = true; boardCloudMessage = e.message; }
-    finally { boardCloudBusy = false; renderBoardCloud(); if (boardPending().length || boardRemoved.length) { if (boardCloudTimer) clearTimeout(boardCloudTimer); boardCloudTimer = setTimeout(syncBoardCloud, boardCloudOnline ? 800 : 10000); } }
+    finally { boardCloudBusy = false; renderBoardCloud(); if (boardPending().length || boardRemoved.length) { if (boardCloudTimer) clearTimeout(boardCloudTimer); boardCloudTimer = setTimeout(syncBoardCloud, boardCloudOnline && !boardCloudError ? 800 : 10000); } }
   }
   function removeBoardStrokes(removed) {
     removed.forEach(s => { if (s.id && !boardRemoved.includes(s.id)) boardRemoved.push(s.id); });
