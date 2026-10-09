@@ -3057,7 +3057,12 @@
         syncAll(); pushCandles(); scheduleNoteRetry(true);
       });
       controls.appendChild(button);
-      section.insertBefore(controls, wall);
+      const view = document.createElement('a');
+      view.href = '#noteWall';
+      view.className = 'btn btn-light';
+      view.textContent = '查看便签';
+      controls.appendChild(view);
+      section.insertBefore(controls, section.querySelector('.note-editor') || wall);
     }
     renderNoteSync();
   }

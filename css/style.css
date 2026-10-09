@@ -3404,3 +3404,7 @@ body.gate-lock { overflow: hidden; height: 100%; touch-action: none; }
 }
 .shared-controls p { margin: 0; font-size: 13px; color: var(--ink-soft); }
 .shared-controls .btn { padding: 8px 14px; font-size: 13px; }
+
+.note-wall { scroll-margin-top: 24px; }
+.perf-mobile .note-card { animation: none; }
+.perf-mobile .note-card.is-new { animation: noteDrop .45s ease-out both; }
