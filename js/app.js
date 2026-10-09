@@ -1191,7 +1191,20 @@
 
      显示值 = gCandles + gWait + gFly —— 所以「我点 N 次，数字就 +N」永远成立。 */
   let gCandles = 0, gHosts = 0, gLoaded = false;
-  let gWait = 0, gFly = 0, gRetryTimer = null, gRetryDelay = 6000;
+  const CANDLE_PENDING_KEY = 'lzx_candle_pending';
+  let gWait = Math.max(0, Math.floor(Number(store.get(CANDLE_PENDING_KEY, 0)) || 0));
+  let gFly = 0, gRetryTimer = null, gRetryDelay = 6000;
+
+  function savePendingCandles() {
+    // 包含已发出但还没确认的请求，刷新后仍可重试。
+    return store.set(CANDLE_PENDING_KEY, gWait + gFly);
+  }
+
+  function restoreSharedLights() {
+    const count = Math.max(litCount, gCandles);
+    candles.slice(0, count).forEach(c => c.el.classList.add('is-lit'));
+    if (candles.length && count >= candles.length && stage) stage.classList.add('lit');
+  }
 
   function apiOk() {
     return !!(window.LZX_API && LZX_API.isOnline() !== false);
@@ -1220,6 +1233,10 @@
       return;
     }
     el.classList.remove('warn');
+    if (!gLoaded) {
+      el.textContent = '正在读取大家的点亮记录…' + (pendingCount() ? ' · 本次点亮等待上传' : '');
+      return;
+    }
     const head = '已有 ' + gHosts + ' 位朋友为她点亮 · 你自己点了 ' + litCount + ' 次 · ';
     el.textContent = gPendingText(head);
   }
@@ -1227,7 +1244,7 @@
     return pendingCount() > 0 ? (head + '正在上传 ✦') : (head + '所有人都能看到 ✦');
   }
 
-  /* 把队列里的点亮次数送出去。一次最多 5 个，避免一口气打太多请求。
+  /* 把队列里的点亮次数逐个送出去，避免并发写入与限流。
      成功 → 从「发飞中」销账，并采纳服务器返回的新总数；
      失败 → 退回队列，15 秒后自动重试（所以限流或断网都不会丢）。 */
   function pushCandles() {
@@ -1236,9 +1253,11 @@
        不然后面调用会抛异常，这一笔就凭空丢了 */
     if (typeof LZX_API.candle !== 'function') { scheduleCandleRetry(); return; }
     if (LZX_API.isOnline() === false) { scheduleCandleRetry(); return; }
-    const n = Math.min(gWait, 5);
+    if (gFly > 0) return;
+    const n = Math.min(gWait, 1);
     gWait -= n;
     gFly += n;
+    savePendingCandles();
     for (let i = 0; i < n; i++) {
       let pr;
       try {
@@ -1247,6 +1266,7 @@
         /* 调用当场就抛了：把这笔退回去，宁可重发也不能丢 */
         gFly = Math.max(0, gFly - 1);
         gWait++;
+        savePendingCandles();
         scheduleCandleRetry();
         continue;
       }
@@ -1260,6 +1280,8 @@
         } else {
           gWait++;                    /* 没成功就退回队列，等下一轮 */
         }
+        savePendingCandles();
+        restoreSharedLights();
         renderCount(false);
         renderShared();
         if (gWait > 0) {
@@ -1273,6 +1295,7 @@
       }).catch(function () {
         gFly = Math.max(0, gFly - 1);
         gWait++;
+        savePendingCandles();
         renderCount(false);
         renderShared();
         scheduleCandleRetry();
@@ -1293,7 +1316,8 @@
     LZX_API.state().then(d => {
       if (d && d.ok) {
         /* 本机点过但还没同步上去时，别让数字往回跳 */
-        gCandles = Math.max(d.candles || 0, litCount);
+        gCandles = Math.max(gCandles, d.candles || 0);
+        restoreSharedLights();
         gHosts = d.hosts || 0;
         gLoaded = true;
         renderCount(false);
@@ -1352,6 +1376,7 @@
     /* 先把这一次记进「待发队列」，再渲染 ——
        所以点击的当下大数字就会 +1，与网络快慢、服务器是否正常**完全无关** */
     gWait++;
+    if (!savePendingCandles()) toast('浏览器未能保存待上传记录，请等上传完成再刷新');
     renderCount(true);
     renderShared();
     pushCandles();
@@ -1392,6 +1417,7 @@
     renderCount(false);
     renderShared();
     syncCandles();
+    pushCandles();
     /* 每 45 秒悄悄拉一次：别人点的，自己这边也能跟上。
        只读接口，不占写入限流额度。 */
     setInterval(() => { if (!document.hidden) syncCandles(); }, 45000);
@@ -2024,7 +2050,8 @@
     if (!window.LZX_API) return;
     LZX_API.state().then(d => {
       if (!d || !d.ok || !Array.isArray(d.notes)) return;
-      const locals = notes.filter(n => n.local);
+      const remoteIds = new Set(d.notes.map(n => n.id));
+      const locals = notes.filter(n => n.local && !remoteIds.has(n.id));
       /* 服务器上的字段叫 name，本机用 from；样式字段缺了就按 id 推一个稳定的，
          这样即使某条留言少了样式，也不会所有人都是同一张白纸 */
       const fixed = d.notes.map(n => {
@@ -2046,6 +2073,7 @@
       if (sig === notesSig) return;
       notesSig = sig;
       notes = next;
+      store.set(NOTES_KEY, notes);
       renderWall(null);
       if (window.__noteHint && notes.length) window.__noteHint.hidden = true;
     });
@@ -2175,14 +2203,18 @@
           if (d && d.ok && d.note) {
             noteQueue.shift();
             item.id = d.note.id; item.by = d.note.by; item.at = d.note.at;
-            delete item.local;
+            item.local = true; // 保留副本，直到读取接口也确认这条记录
             delete item.pending;
-            store.set(NOTES_KEY, notes.filter(x => x.local));
+            renderWall(null);
+            store.set(NOTES_KEY, notes);
             noteDelay = 5000;
             if (!silentOnce) toast('刚才那条便签已经传上去啦 ✦');
           } else {
             noteDelay = Math.min(noteDelay * 1.8, 60000);
           }
+          scheduleNoteRetry();
+        }).catch(function () {
+          noteDelay = Math.min(noteDelay * 1.8, 60000);
           scheduleNoteRetry();
         });
     }, noteDelay);
@@ -2223,7 +2255,7 @@
     };
     notes.unshift(n);
     /* 先存本机 —— 就算接下来发送失败，刷新页面它也还在，而且会一直重试 */
-    const ok = store.set(NOTES_KEY, notes.filter(x => x.local)) || true;
+    const ok = store.set(NOTES_KEY, notes);
     /* 再送到服务器 —— 这样所有人打开都能看到这条祝福 */
     if (window.LZX_API) {
       LZX_API.addNote({ text: n.text, from: n.from, name: n.from, c: n.c, s: n.s, m: n.m, tilt: n.tilt })
@@ -2232,13 +2264,16 @@
             n.id = d.note.id;
             n.by = d.note.by;
             n.at = d.note.at;
-            delete n.local;          /* 已上服务器：本机不再保留，真实留言以服务器为准 */
+            n.local = true;          /* 读取接口确认前保留本地副本，防止旧响应覆盖 */
             delete n.pending;
-            store.set(NOTES_KEY, notes.filter(x => x.local));
+            store.set(NOTES_KEY, notes);
+            renderWall(null);
+            toast('便签已保存到服务器，其他设备刷新即可看到 ✦');
+            syncNotes();
           } else {
             queueNoteRetry(n);       /* 失败 → 排队自动重试，别让它悄悄丢了 */
           }
-        });
+        }).catch(function () { queueNoteRetry(n); });
     } else {
       queueNoteRetry(n);
     }
@@ -2246,7 +2281,7 @@
     if (noteText) noteText.value = '';
     if (charNow) charNow.textContent = '0';
     renderPreview();
-    toast(ok ? '便签已经贴上去啦 ♡' : '贴上了！不过浏览器没存住（本地空间可能满了）');
+    toast(ok ? '便签已保存在本机，正在上传 ♡' : '贴上了！不过浏览器没存住（本地空间可能满了）');
     const first = wall.firstElementChild;
     if (first) first.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
@@ -2300,7 +2335,7 @@
 
       function drop() {
         notes = notes.filter(n => n.id !== id);
-        store.set(NOTES_KEY, notes.filter(x => x.local));
+        store.set(NOTES_KEY, notes);
         card.style.transition = 'transform .35s, opacity .35s';
         card.style.transform = 'scale(.6) rotate(20deg)';
         card.style.opacity = '0';
@@ -2946,7 +2981,7 @@
       store.set(LAST_KEY, {
         candles: d.candles || 0,
         hosts: d.hosts || 0,
-        notes: (d.notes || []).slice(-20),
+        notes: d.notes || [],
         at: Date.now()
       });
     } catch (e) { /* 存档失败无所谓，不影响主流程 */ }
@@ -2970,13 +3005,17 @@
     if (last && typeof last.candles === 'number') {
       if (last.candles > gCandles) gCandles = last.candles;
       if ((last.hosts || 0) > gHosts) gHosts = last.hosts;
+      restoreSharedLights();
       renderCount(false);
       renderShared();
     }
     syncAll();
     /* 数据服务恢复的一刻，把落下的数据补上（api.js 重试成功时会通知这里） */
     if (window.LZX_API && LZX_API.onStatus) {
-      LZX_API.onStatus(function (st) { if (st === true) syncAll(); });
+      LZX_API.onStatus(function (st) {
+        if (st === true) { syncAll(); pushCandles(); scheduleNoteRetry(true); }
+        renderShared();
+      });
     }
     if (syncTimer) return;
     syncTimer = setInterval(syncAll, SYNC_MS);
@@ -2986,7 +3025,7 @@
       if (!document.hidden) syncAll();
     });
     /* 网络恢复：立刻拉一次 */
-    window.addEventListener('online', function () { syncAll(); });
+    window.addEventListener('online', function () { syncAll(); pushCandles(); scheduleNoteRetry(true); });
   }
 
   function init() {

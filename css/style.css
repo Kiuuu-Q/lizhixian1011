@@ -3177,7 +3177,10 @@ body.gate-lock { overflow: hidden; height: 100%; touch-action: none; }
   font-family: 'PacificoCute', Georgia, 'Times New Roman', serif;
   font-size: clamp(2.6rem, 12vw, 5.2rem);
   font-weight: 400;
-  line-height: 1.06;
+  /* Pacifico 的 p/y 下伸到行框外；给渐变的绘制区域留出字尾空间。 */
+  line-height: 1.35;
+  padding: .08em .18em .24em;
+  overflow: visible;
   /* 和封面大标题同一套渐变，进门就知道是同一个页面 */
   background-image: linear-gradient(176deg, #9fb4ff 0%, #b79cf7 46%, #ff9ecb 100%);
   -webkit-background-clip: text;

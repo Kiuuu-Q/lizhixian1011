@@ -38,6 +38,7 @@
   var BACKOFF_MUL = 2;
   var retryTimer = null;
   var statusFns = [];         /* 状态变化通知（app.js 靠它在恢复的一刻补数据） */
+  var latestState = null;     /* 拒绝迟到的旧版本状态，避免刚保存的内容被旧响应覆盖 */
   var inflightState = null;   /* 同一时刻的多处 state() 合并成一次请求 */
 
   /* 超时：读宽松、写适中、上传很宽松（手机流量下大图要慢得多） */
@@ -121,15 +122,31 @@
          同一时刻不同设备可能拿到**不同版本**的数据（一个 66、一个 72）。 */
       var bust = (BASE + path).indexOf('?') >= 0 ? '&' : '?';
       fetch(BASE + path + bust + '_=' + Date.now() + Math.random().toString(36).slice(2, 6), opt).then(function (r) {
-        clearTimeout(timer);
-        return r.json().catch(function () { return {}; }).then(function (j) {
-          if (r.status >= 500) { markDown(); return resolve(null); }
+        return r.json().then(function (j) {
+          clearTimeout(timer);
+          if (!r.ok || !j || j.ok !== true) {
+            noteErr((j && (j.error || j.message)) || ('服务响应异常（HTTP ' + r.status + '）'));
+            // 业务拒绝不表示断网；仍保留写入队列，但不能声称已经上传成功。
+            if (r.status >= 500 || r.status === 429 || r.ok) markDown();
+            return resolve(null);
+          }
+          if (path === '/api/state') {
+            if (!Array.isArray(j.notes) || typeof j.candles !== 'number') {
+              noteErr('共享记录格式异常');
+              markDown();
+              return resolve(null);
+            }
+            if (latestState && typeof latestState.rev === 'number' &&
+                typeof j.rev === 'number' && j.rev < latestState.rev) j = latestState;
+            else latestState = j;
+          }
+          lastErr = '';
           markUp();
           resolve(j);
         });
       }).catch(function (e) {
         clearTimeout(timer);
-        noteErr(e && e.name === 'AbortError' ? '请求超时' : '网络错误');
+        noteErr(e && e.name === 'AbortError' ? '请求超时' : (e instanceof SyntaxError ? '服务未返回有效数据' : '网络错误'));
         markDown();
         resolve(null);
       });
