@@ -1568,10 +1568,14 @@
   /* =========================================================
      4. 回忆放映机
      ========================================================= */
-  /* 内置样片：已按作者要求全部撤下，相册现在是空的。
-     留成一个空数组而不是删掉这段，是为了给「以后想放回几张样片」留个口子 ——
-     往这里塞回 { src, cap } 就能恢复。 */
-  const DEFAULT_ITEMS = [];
+  /* 内置样片 —— 相册一打开就有东西看。
+     ⚠️ 这几张曾经被整段撤下、连素材图都从磁盘删了（见 git d02e7f8），
+        已经恢复。以后真要撤，先问清楚，并且**别删 assets 里的原图**。 */
+  const DEFAULT_ITEMS = [
+    { src: 'assets/cake.jpg', cap: '今天的主角 —— 她的生日蛋糕 🎂' },
+    { src: 'assets/avatar.jpg', cap: '她喜欢的刘耀文，也来一起过生日 🐱' },
+    { src: 'assets/sign.jpg', cap: 'To 李芷贤 · Happy Birthday' }
+  ];
 
   const GAL_KEY = 'lzx_gallery';
   const slideWindow = $('#slideWindow');
@@ -1585,14 +1589,9 @@
 
   let gallery = store.get(GAL_KEY, []) || [];
 
-  /* 一次性清空：相册撤图之后，把以前存在这台设备上的照片也顺手清一次。
-     只认一个标记 —— 之后自己再添加的照片不会被抹掉。 */
-  const ALBUM_WIPED = 'lzx_album_wiped_v1';
-  if (!store.get(ALBUM_WIPED, false)) {
-    gallery = [];
-    store.set(GAL_KEY, gallery);
-    store.set(ALBUM_WIPED, true);
-  }
+  /* ⚠️ 这里原本有一段「一次性清空本机相册」的代码（靠 ALBUM_WIPED 标记只跑一次）。
+     它会在升级时把用户自己加进相册的照片**全部抹掉，而且找不回来** —— 已删除。
+     以后再想清相册，只能由用户主动点「恢复默认」；任何自动清空都不许再加。 */
 
   let shared = [];        /* 大家上传到服务器上的照片 */
   let items = [];
@@ -1604,7 +1603,7 @@
   const DUR = 4800;
 
   function buildItems() {
-    /* 顺序：大家上传的 → 你自己加的 → 内置的几张（当前为空） */
+    /* 顺序：大家上传的 → 你自己加的 → 内置样片 */
     items = shared.concat(gallery).concat(DEFAULT_ITEMS);
   }
 
@@ -1771,17 +1770,14 @@
     $$('[data-act="next"]').forEach(b => b.addEventListener('click', () => { go(1); }));
 
     if (resetBtn) {
-      /* 内置样片撤下之后，「恢复默认」这个名字就不成立了 ——
-         它现在只做一件事：清掉这台设备上加过的照片。
-         （上传到网上的那些得由上传的人自己删，口令在页面上不做暴露。） */
-      resetBtn.textContent = '清空相册';
+      /* 「恢复默认」= 撤掉这台设备上加的照片，回到内置样片。
+         （别人传到网上的那些不归它管，得由上传的人自己撤。） */
       resetBtn.addEventListener('click', () => {
-        if (!gallery.length && !shared.length) { toast('相册现在就是空的'); return; }
-        if (!gallery.length) { toast('这几张是传到网上的，得由上传的人自己撤'); return; }
+        if (!gallery.length) { toast('现在就是默认的几张啦'); return; }
         gallery = [];
         store.set(GAL_KEY, gallery);
         buildDeck(true);
-        toast('已清空这台设备上加的照片');
+        toast('已恢复默认照片');
       });
     }
 
