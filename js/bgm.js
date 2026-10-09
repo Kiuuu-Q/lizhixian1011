@@ -586,7 +586,9 @@
        所以比「合成音乐时代」抬得更高：0.55 / 0.34。 */
     var lvl = big ? 0.55 : 0.34;
     /* 每朵花的音色略有不同，不然一串烟花听着像复读 */
-    var detune = 0.88 + Math.random() * 0.26;
+    /* ⚠️ 范围别开太大：`playbackRate` 是对噪声做重采样，偏离 1 太多在高增益下
+       会带出明显的「数码颗粒感」。收到 0.94~1.08 仍能听出每朵不同，但干净。 */
+    var detune = 0.94 + Math.random() * 0.14;
     /* 色调：暖色（前几个）更闷更沉、尾巴更长；冷色更清亮干脆 */
     var warm = !(typeof toneIndex === 'number') || toneIndex <= 2;
     var tail = (big ? 1 : 0.62) * (warm ? 1.15 : 0.85);
@@ -626,10 +628,12 @@
     body.connect(bus);
 
     /* ③ 爆裂「啪」 —— **手机唯一真正放得出来的那一层**（扬声器对 2~4kHz 最灵敏）。
-          频段从 1500→620 抬到 2800→900Hz，音量也从「主体的三成」抬到跟主体一个量级。
-          ⚠️ 旧版把这层压得极轻，结果在手机上等于没爆炸声。 */
-    layer('bandpass', 2800 * detune, 900 * detune, 1.0,
-          lvl * 1.8, 0.004, 0.17).connect(bus);
+          ⚠️ 频段别再往上抬：3kHz 以上的**持续**噪声听起来就是「嘶——/滋滋」。
+             抬到 2800Hz 时实测 3kHz 以上能量高达 49，听感是电流噪音。
+             现在收到 1900→800Hz，并把衰减从 0.17s 缩到 0.11s ——
+             「啪」要的是**短促的瞬态**，不是一片嘶声。 */
+    layer('bandpass', 1900 * detune, 800 * detune, 1.0,
+          lvl * 1.6, 0.004, 0.11).connect(bus);
 
     /* ④ 尾音滚动 —— 几十 Hz 的长尾，沉下去的那口气。
           大烟花 1.8~2.3s，小烟花 0.8s 上下。 */
@@ -652,24 +656,29 @@
     ef.connect(fb); fb.connect(dly);
 
     /* ⑥ 噼啪余烬（大烟花）—— 一颗颗随机的小脉冲，不是一片持续的「嘶——」。
-          在一段噪声上点一串 gain 自动化，听感就是火星光在头顶依次熄灭。 */
+     ⚠️⚠️ 「滋滋滋」的元凶就是这一层（2026-10-09 用户反馈）：
+        上一轮为了补偿滤波衰减把每一颗的增益抬到 ~0.5，而频段又在 3.4~4.5kHz、
+        1.5 秒里塞 10~16 颗 —— **密集的中高频脉冲叠加起来就是电流噪音**。
+        现在：频段降到 2000~3000Hz（更像「啪」而不是「嘶」）、
+        音量收到 0.10~0.26（约原来的四分之一）、颗数减到 5~9、每颗更短。
+        「噼啪」是靠**稀疏和间隔**像火星熄灭，不是靠响和密。 */
     if (big) {
       var cr = ctx.createBufferSource();
       cr.buffer = noise();
       var hp = ctx.createBiquadFilter();
       hp.type = 'bandpass';
-      hp.frequency.value = 3400 + Math.random() * 1100;
-      hp.Q.value = 1.3;
+      hp.frequency.value = 2000 + Math.random() * 1000;
+      hp.Q.value = 1.6;
       var cg = ctx.createGain();
       cg.gain.setValueAtTime(0.0001, now);
-      var pops = 10 + Math.floor(Math.random() * 6);
+      var pops = 5 + Math.floor(Math.random() * 5);
       var span = 1.5 * (warm ? 1.2 : 0.9);
       for (var i = 0; i < pops; i++) {
         var t = now + 0.2 + Math.random() * span;
-        var amp = lvl * (0.35 + Math.random() * 0.75);   /* 同样补偿滤波衰减（带通 3kHz） */
+        var amp = lvl * (0.10 + Math.random() * 0.16);
         cg.gain.setValueAtTime(0.0001, t);
-        cg.gain.exponentialRampToValueAtTime(amp, t + 0.006);
-        cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.03 + Math.random() * 0.05);
+        cg.gain.exponentialRampToValueAtTime(amp, t + 0.005);
+        cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.02 + Math.random() * 0.035);
       }
       cr.connect(hp); hp.connect(cg); cg.connect(bus);
       cr.start(now); cr.stop(now + span + 0.4);

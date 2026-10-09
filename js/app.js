@@ -892,10 +892,48 @@
   function syncDecoUp(item) {
     if (!window.LZX_API) return;
     LZX_API.addDeco(item).then(d => {
-      if (!d) return;
+      if (!d) {
+        /* ⚠️ 失败不能静默 return（旧版就是直接 return，用户完全不知道没传上去）。
+           装饰本身已存在本机，这里告诉用户 + 排进重试。 */
+        queueDecoRetry(item);
+        return;
+      }
       if (d.ok && Array.isArray(d.deco)) { diyItems = d.deco; renderDecos(); }
       else if (d.err === 'full') { toast('蛋糕上已经放满啦 🙈'); syncDecos(); }
+      else { queueDecoRetry(item); }
     });
+  }
+
+  /* 装饰的自动重试（和留言同一套思路） */
+  var decoQueue = [], decoTimer = null, decoDelay = 5000;
+
+  function queueDecoRetry(item) {
+    var dup = decoQueue.some(function (x) { return x.id === item.id; });
+    if (!dup) decoQueue.push(item);
+    toast('装饰放好了，但还没传上去 —— 会自动重试 ✦');
+    scheduleDecoRetry();
+  }
+
+  function scheduleDecoRetry() {
+    if (decoTimer || !decoQueue.length || !window.LZX_API) return;
+    decoTimer = setTimeout(function () {
+      decoTimer = null;
+      var it = decoQueue[0];
+      if (!it) return;
+      LZX_API.addDeco(it).then(function (d) {
+        if (d && d.ok) {
+          decoQueue.shift();
+          decoDelay = 5000;
+          if (Array.isArray(d.deco)) { diyItems = d.deco; renderDecos(); }
+        } else if (d && d.err === 'full') {
+          decoQueue.shift();
+          toast('蛋糕上已经放满啦 🙈');
+        } else {
+          decoDelay = Math.min(decoDelay * 1.8, 60000);
+        }
+        scheduleDecoRetry();
+      });
+    }, decoDelay);
   }
 
   /* 拉取服务器上的装饰（大家放的都在这里）。
@@ -2108,6 +2146,54 @@
     if (emptyTip) emptyTip.hidden = notes.length > 0;
   }
 
+  /* ---------- 留言的自动重试 ----------
+     留言发失败时**不能静默丢掉**（用户会以为写好了）。
+     它已经在本机存档（带 `local` 标记），这里排进队列退避重试；
+     成功之后才摘掉标记、从本机存档里移除。刷新页面会重新从存档捡起来。 */
+  var noteQueue = [], noteTimer = null, noteDelay = 5000;
+
+  function queueNoteRetry(n) {
+    if (noteQueue.indexOf(n) < 0) noteQueue.push(n);
+    toast('便签贴上了，但还没传上去 —— 会自动重试，先别关页面 ✦');
+    scheduleNoteRetry();
+  }
+
+  function scheduleNoteRetry(silent) {
+    if (noteTimer || !noteQueue.length || !window.LZX_API) return;
+    var silentOnce = !!silent;        /* 只对「这一次」静默 */
+    noteTimer = setTimeout(function () {
+      noteTimer = null;
+      var item = noteQueue[0];
+      if (!item) return;
+      LZX_API.addNote({ text: item.text, from: item.from, name: item.from,
+                        c: item.c, s: item.s, m: item.m, tilt: item.tilt })
+        .then(function (d) {
+          if (d && d.ok && d.note) {
+            noteQueue.shift();
+            item.id = d.note.id; item.by = d.note.by; item.at = d.note.at;
+            delete item.local;
+            delete item.pending;
+            store.set(NOTES_KEY, notes.filter(x => x.local));
+            noteDelay = 5000;
+            if (!silentOnce) toast('刚才那条便签已经传上去啦 ✦');
+          } else {
+            noteDelay = Math.min(noteDelay * 1.8, 60000);
+          }
+          scheduleNoteRetry();
+        });
+    }, noteDelay);
+  }
+
+  /* 刷新后把本机存档里「用户写了但还没传上去的」重新排进队列。
+     ⚠️ 只看 `pending`，**绝不能用 `local`** —— 内置样片也带 `local`，
+        拿它来筛会把示例留言也传上服务器。 */
+  function resumeNoteRetries() {
+    var waiting = notes.filter(function (n) { return n.pending && n.text; });
+    if (!waiting.length) return;
+    noteQueue = waiting;
+    scheduleNoteRetry(true);      /* true = 静默重试，不弹提示（避免一刷新就跳 toast） */
+  }
+
   function addNote() {
     const text = noteText ? noteText.value.trim() : '';
     if (!text) {
@@ -2122,10 +2208,19 @@
       c: sel.c,
       s: sel.s,
       m: sel.m,
-      tilt: Number(rnd(-5, 5).toFixed(2))
+      tilt: Number(rnd(-5, 5).toFixed(2)),
+      /* 🔴 `local` = 进本机存档（发失败时刷新也还在）；
+         `pending` = **还没上传成功**，只有用户亲手写的才有。
+      ⚠️ 这两个标记**不能混用**：内置样片留言（DEFAULT_NOTES）也带 `local`，
+         如果拿 `local` 当「待上传」用，会把样片也传到服务器上（我犯过这个错，
+         结果留言墙上多出几条重复的示例）。 */
+      local: true,
+      pending: true
     };
     notes.unshift(n);
-    /* 送到服务器 —— 这样所有人打开都能看到这条祝福 */
+    /* 先存本机 —— 就算接下来发送失败，刷新页面它也还在，而且会一直重试 */
+    const ok = store.set(NOTES_KEY, notes.filter(x => x.local)) || true;
+    /* 再送到服务器 —— 这样所有人打开都能看到这条祝福 */
     if (window.LZX_API) {
       LZX_API.addNote({ text: n.text, from: n.from, name: n.from, c: n.c, s: n.s, m: n.m, tilt: n.tilt })
         .then(d => {
@@ -2133,14 +2228,16 @@
             n.id = d.note.id;
             n.by = d.note.by;
             n.at = d.note.at;
-            /* 本机只留「内置示例」，真实留言以服务器为准，省本地空间 */
+            delete n.local;          /* 已上服务器：本机不再保留，真实留言以服务器为准 */
+            delete n.pending;
             store.set(NOTES_KEY, notes.filter(x => x.local));
-          } else if (d === null) {
-            toast('便签贴上了，不过现在连不上服务器，别人暂时看不到哦');
+          } else {
+            queueNoteRetry(n);       /* 失败 → 排队自动重试，别让它悄悄丢了 */
           }
         });
+    } else {
+      queueNoteRetry(n);
     }
-    const ok = store.set(NOTES_KEY, notes.filter(x => x.local)) || true;
     renderWall(n.id);
     if (noteText) noteText.value = '';
     if (charNow) charNow.textContent = '0';
@@ -2156,6 +2253,8 @@
     renderPreview();
     renderWall(null);
     window.__noteHint = emptyTip;
+    /* 上次没传上去的留言（刷新前留下的），接着重试 */
+    resumeNoteRetries();
     syncNotes();
 
     if (noteAdd) noteAdd.addEventListener('click', addNote);
