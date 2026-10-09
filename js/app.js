@@ -1723,7 +1723,8 @@
   function updateSharedPhotos() {
     const old = shared.map(p => p.pid).join(',');
     const migrated = new Set(gallery.filter(p => p.cloudPid && cloudPhotos.some(c => c.pid === p.cloudPid)).map(p => p.pid));
-    shared = cloudPhotos.concat(legacyPhotos.filter(p => !migrated.has(p.pid)));
+    const cloudIds = new Set(cloudPhotos.map(p => p.pid));
+    shared = cloudPhotos.concat(legacyPhotos.filter(p => !migrated.has(p.pid) && !(p.uploadId && cloudIds.has('p' + p.uploadId))));
     store.set('lzx_shared_photos_v2', {legacy:legacyPhotos,cloud:cloudPhotos});
     const next = shared.map(p => p.pid).join(',');
     if (next !== old) buildDeck(true);
@@ -1737,7 +1738,7 @@
   function syncPhotos() {
     if (window.LZX_API) LZX_API.state().then(d => {
       if (!d || !Array.isArray(d.photos)) return;
-      legacyPhotos = d.photos.slice().reverse().map(p => ({src:LZX_API.base()+p.url,cap:filenameLike(p.cap)?'':(p.cap||''),shared:true,pid:p.id}));
+      legacyPhotos = d.photos.slice().reverse().map(p => ({src:LZX_API.base()+p.url,cap:filenameLike(p.cap)?'':(p.cap||''),shared:true,pid:p.id,uploadId:/^__lzx_photo_([a-z0-9]+)__$/i.test(p.cap||'') ? p.cap.match(/^__lzx_photo_([a-z0-9]+)__$/i)[1] : ''}));
       updateSharedPhotos(); renderPhotoSync();
     });
     boardRequest('/api/photos').then(d => {
@@ -2442,7 +2443,7 @@
   let boardSaveStatus = null;
   let boardCloudVisitor = '', boardCloudKey = '', boardCloudBusy = false, boardCloudRevision = '';
   let boardRemoved = [], boardCloudOnline = false, boardCloudTimer = null, boardCloudError = false, sharedStrokeCount = 0, boardCloudMessage = '';
-  const BOARD_CLOUD = 'https://lizhixian1011-shared-doodle.surefrog16.chatgpt.site';
+  const BOARD_CLOUD = 'https://e7b4f5bca0ca45598b6b1379c930e2b3.app.workbuddy.host';
 
   function boardId() {
     return 's' + (window.crypto && crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : Date.now().toString(36) + Math.random().toString(36).slice(2));
