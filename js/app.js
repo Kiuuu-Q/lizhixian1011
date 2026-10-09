@@ -1752,6 +1752,7 @@
     const item = items[mi];
     if (!item) return;
     cell.i = mi;              /* 记下这一格现在放的是第几张，管理删图要用 */
+    cell.img.fetchPriority = mi === idx ? 'high' : 'low';
     cell.img.src = item.src;
     if (cell.img.decode) cell.img.decode().catch(() => {});
   }
@@ -1780,13 +1781,13 @@
       cells = [makeCell(), makeCell(), makeCell()];
       idx = 0;
       iPrev = 2; iCur = 0; iNext = 1;
-      loadCell(cells[iPrev], idx - 1);
       loadCell(cells[iCur], idx);
+      loadCell(cells[iPrev], idx - 1);
       loadCell(cells[iNext], idx + 1);
       ctx_bindClicks();
     } else {
-      loadCell(cells[iPrev], idx - 1);
       loadCell(cells[iCur], idx);
+      loadCell(cells[iPrev], idx - 1);
       loadCell(cells[iNext], idx + 1);
     }
     setRoles();
@@ -1817,7 +1818,7 @@
     /* 下一张提前就位（此刻它在最前面的透明层里悄悄加载） */
     const nextIdx = (idx + (items.length > 2 ? 1 : 1)) % items.length;
     loadCell(cells[iNext], nextIdx);
-    preload(items[(idx + 2) % items.length].src);
+    if (!PERF.mobile) preload(items[(idx + 2) % items.length].src);
 
     setRoles();
     acc = 0;
@@ -2890,12 +2891,20 @@
     requestAnimationFrame(loop);
   }
 
+  let resizeTimer = 0, layoutWidth = window.innerWidth;
   function onResize() {
-    bgResize();
-    fwResize();
-    calcScale();
-    applySpin();
-    if (typeof sizeBoard === 'function') sizeBoard();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      bgResize();
+      fwResize();
+      // 微信/手机地址栏收起会反复改变高度，只有宽度变化才重排蛋糕和画板。
+      if (window.innerWidth !== layoutWidth) {
+        layoutWidth = window.innerWidth;
+        calcScale();
+        applySpin();
+        if (typeof sizeBoard === 'function') sizeBoard();
+      }
+    }, PERF.mobile ? 180 : 80);
   }
 
   /* =========================================================

@@ -714,7 +714,7 @@
     if (synthOnly) return null;
     try {
       audioEl = new Audio();
-      audioEl.preload = 'auto';
+      audioEl.preload = window.matchMedia && window.matchMedia('(pointer: coarse), (max-width: 640px)').matches ? 'metadata' : 'auto';
       audioEl.loop = false;                /* 自己管循环，好控制间隔 */
       audioEl.volume = 0;
       audioEl.addEventListener('ended', onAudioEnded);

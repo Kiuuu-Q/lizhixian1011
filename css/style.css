@@ -3,27 +3,8 @@
    浅蓝紫 / 手绘可爱风
    ========================================================= */
 
-/* ---------- 字体：尽力加载艺术字体，失败自动回落 ---------- */
-@font-face {
-  font-family: 'PacificoCute';
-  src: url('https://cdn.jsdelivr.net/fontsource/fonts/pacifico@latest/latin-400-normal.woff2') format('woff2');
-  font-display: swap;
-  font-weight: 400;
-}
-@font-face {
-  font-family: 'MaShanCute';
-  src: url('https://cdn.jsdelivr.net/fontsource/fonts/ma-shan-zheng@latest/chinese-simplified-400-normal.woff2') format('woff2');
-  font-display: swap;
-  font-weight: 400;
-}
+/* 字体与网页同源，按字符分片，保留全部字形。 */
 
-/* 全站中文主字体：站酷快乐体（圆润手写感，比微软雅黑更贴这页的气质） */
-@font-face {
-  font-family: 'ZcoolCute';
-  src: url('https://cdn.jsdelivr.net/fontsource/fonts/zcool-kuaile@latest/chinese-simplified-400-normal.woff2') format('woff2');
-  font-display: swap;
-  font-weight: 400;
-}
 
 /* ---------- 变量 ---------- */
 :root {
@@ -130,6 +111,7 @@ button, input, textarea { font: inherit; color: inherit; }
    一、封面 HERO
    ========================================================= */
 .hero {
+  min-height: 100vh;
   min-height: 100svh;
   display: flex;
   align-items: center;
@@ -694,7 +676,7 @@ button, input, textarea { font: inherit; color: inherit; }
     drop-shadow(0 17px 19px rgba(24, 28, 90, .38));
   animation: b19Balloon 5.6s ease-in-out infinite;
 }
-@keyframes b19Balloon@keyframes b19Balloon {
+@keyframes b19Balloon {
   0%, 100% { transform: translateY(0) rotate(-2deg) scale(1); }
   50%      { transform: translateY(-9px) rotate(2deg) scale(1.035); }
 }
@@ -3337,6 +3319,7 @@ body.gate-lock { overflow: hidden; height: 100%; touch-action: none; }
   margin-bottom: 0;
 }
 .cake-section .cake-stage {
+  height: calc(100vh - 120px);
   height: calc(100svh - 120px);
   min-height: 560px;
   max-height: 940px;
@@ -3351,6 +3334,7 @@ body.gate-lock { overflow: hidden; height: 100%; touch-action: none; }
 @media (max-width: 900px) {
   .cake-section .sec-head { padding: 62px 18px 6px; }
   .cake-section .cake-stage {
+    height: calc(100vh - 150px);
     height: calc(100svh - 150px);
     min-height: 480px;
     max-height: 720px;
@@ -3360,6 +3344,7 @@ body.gate-lock { overflow: hidden; height: 100%; touch-action: none; }
 }
 @media (max-width: 620px) {
   .cake-section .cake-stage {
+    height: calc(100vh - 180px);
     height: calc(100svh - 180px);
     min-height: 430px;
   }
@@ -3408,3 +3393,18 @@ body.gate-lock { overflow: hidden; height: 100%; touch-action: none; }
 .note-wall { scroll-margin-top: 24px; }
 .perf-mobile .note-card { animation: none; }
 .perf-mobile .note-card.is-new { animation: noteDrop .45s ease-out both; }
+
+/* 微信内置浏览器：减少滚动时的全屏重绘，保留拼贴、照片和互动。 */
+.perf-mobile body { background-attachment: scroll; }
+.perf-mobile .b19-el, .perf-mobile .b19-balloon,
+.perf-mobile .b19-cir, .perf-mobile .b19-spark,
+.perf-mobile .b19-squig, .perf-mobile .slide.is-current img { animation: none; }
+.perf-mobile .b19-neoncake { filter: drop-shadow(0 0 3px rgba(228,240,255,.8)); }
+.perf-mobile .b19-board, .perf-mobile .slide-stage,
+.perf-mobile .bgm-btn { backdrop-filter: none; -webkit-backdrop-filter: none; }
+@supports not (overflow: clip) { .cake-section { overflow-x: hidden; } }
+@supports not (aspect-ratio: 1) {
+  .slide-window { height: 0; padding-bottom: 62.5%; }
+  @media (max-width: 620px) { .slide-window { padding-bottom: 75%; } }
+  @media (min-width: 901px) { .b19-board { height: 0; padding-bottom: 64%; } }
+}

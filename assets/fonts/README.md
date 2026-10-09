@@ -1,0 +1,1 @@
+Fonts are self-hosted subsets of Pacifico, Ma Shan Zheng, and ZCOOL KuaiLe, downloaded from Fontsource. All glyphs remain available through unicode-range subsets. Original font licenses are included alongside this file. Page glyph subsets are prioritized; additional glyphs load only when needed.
