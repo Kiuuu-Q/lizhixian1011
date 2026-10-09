@@ -3,11 +3,18 @@
    ---------------------------------------------------------
    两个部分：
      1. 背景音乐 —— 八音盒版的《生日快乐》，**三层编配**（刻意从简）：
-          ① 主旋律  八音盒音色，最突出，是唯一的主角
-          ② 和声    只在 ≥1 拍的长音上，且**必须严格是和弦音**，音量很轻
+          ① 主旋律  八音盒音色，唯一的主角，音符之间要留缝
+          ② 和声    只给 ≥2 拍的长音，严格取和弦音，音量很轻
           ③ 低音    每个和弦换一次，低八度长音，只当地基
-        之前那版还加了「分解和弦琶音」和「长弦垫」——两个都在中音区和主旋律抢地盘，
-        再加 2.1 秒的长混响，音符之间糊成一片，听感就是「乱」。全部去掉了。
+
+     ⚠️ 「音乐乱」踩过的三个坑，别再犯：
+       · 时值乘大系数（曾经 1.9 / 1.5）→ 音符互相叠，再叠上混响就糊成一团。
+         现在只多给 5%，颗粒感全靠「音与音之间那道缝」。
+       · 挂 DynamicsCompressor → 八音盒的瞬态被「压一下松一下」，
+         整首曲子呼哧呼哧地起伏，非常像「乱」。峰值靠音量标定控制，不要用压缩器。
+       · 用递归 setTimeout 排下一轮 → 页面一卡（放烟花时动辄几百毫秒）就晚触发，
+         下一轮起点成了过去时刻，整轮音符被一次性倾泻出来 = 抢拍糊成一团。
+         现在是**前瞻调度**：维护绝对时间轴，定期检查「未来 6 秒内排满了没有」。
      2. 音效 —— 烟花升空的「咻」与炸开的「砰」，由烟花引擎逐朵触发
 
    为什么全部用合成、不用音频文件：
@@ -60,11 +67,11 @@
   ];
 
   var BEAT = 0.72;          /* 一拍的秒数 → 约 83 BPM */
-  var VOL = 0.34;           /* 总音量（声部减了，这里可以稍微抬一点） */
-  var MEL_VOL = 0.30;       /* 主旋律 —— 最响 */
-  var HARM_VOL = 0.052;     /* 和声 —— 很轻，只是给旋律垫个底 */
-  var BASS_VOL = 0.05;      /* 低音 */
-  var TAIL = 2 * BEAT;      /* 一轮结束后留白 */
+  var VOL = 0.40;           /* 总音量（压缩器去掉了、声部也少了，可以抬一点） */
+  var MEL_VOL = 0.30;       /* 主旋律 —— 唯一的主角 */
+  var HARM_VOL = 0.045;     /* 和声 —— 很轻，只在长音处托一下 */
+  var BASS_VOL = 0.05;      /* 低音 —— 只当地基 */
+  var TAIL = 2.5 * BEAT;    /* 一轮之间留点呼吸（时值收紧了，这里补回来一点） */
 
   /* 当前还活着的振荡器。暂停 / 重新开始时要把它们**真正停掉** ——
      只把音量淡到 0 是不够的：已经排到时间轴上的音符还在走，
@@ -88,7 +95,7 @@
   }
 
   var ctx = null, master = null, bus = null;
-  var playing = false, cycleTimer = null, started = false;
+  var playing = false, started = false;
   var listeners = [];
   /* ⚠️ 区分两件事：
        playing   —— 此刻音乐在不在响（切后台会自动停）
@@ -131,19 +138,17 @@
     master = ctx.createGain();
     master.gain.value = 0;
 
-    /* 声部变多之后，合唱会叠出超过 1.0 的峰值 —— 挂一个限幅器兜住，避免破音 */
-    var comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -10;
-    comp.knee.value = 8;
-    comp.ratio.value = 6;
-    comp.attack.value = 0.004;
-    comp.release.value = 0.22;
+    /* ⚠️ 这里原本挂着一个限幅器（threshold -10dB / ratio 6:1）——
+       它是个「听着乱」的隐形元凶：八音盒每个音都是很尖的瞬态，
+       压缩器会不停「压一下、松一下」，整首曲子就呼哧呼哧地起伏。
+       现在声部已经减到最少，算下来峰值也就 0.2 上下，根本用不着它，去掉。 */
 
-    /* 混响支路：bus → 干声 → master，同时 bus → 混响 → master */
+    /* 混响支路：bus → 干声 → master，同时 bus → 混响 → master。
+       混响收到 0.9 秒 —— 八音盒最怕尾巴拖太长，音符之间会糊成一片。 */
     var verb = ctx.createConvolver();
-    verb.buffer = makeImpulse(1.15, 2.2);
+    verb.buffer = makeImpulse(0.9, 2.6);
     var verbGain = ctx.createGain();
-    verbGain.gain.value = 0.2;
+    verbGain.gain.value = 0.16;
     bus = ctx.createGain();
     bus.gain.value = 1;
 
@@ -151,8 +156,7 @@
     bus.connect(verb);
     verb.connect(verbGain);
     verbGain.connect(master);
-    master.connect(comp);
-    comp.connect(ctx.destination);
+    master.connect(ctx.destination);
     return true;
   }
 
@@ -252,48 +256,71 @@
     return best;
   }
 
-  /* ---------- 排一轮：三层，快放完时再排下一轮 ---------- */
+  /* ---------- 排一轮：三层编配。起点 from 由调度器给定（一定是未来时刻）----------
+     ⚠️ 音的长度**不要乘大系数**：八音盒的颗粒感来自「音符之间有缝」。
+        旧版把时值乘 1.9（和声 1.5），一个音还没落下一个就压上来，
+        再叠上长混响，听感就是糊成一团「乱」。现在只多给 5%。 */
   function scheduleCycle(from) {
-    /* 先算出每个旋律音的起始时刻，后面所有声部都对齐这条时间轴 */
+    /* 先算出每个旋律音的起始时刻，所有声部都对齐这条时间轴 */
     var times = [from];
     for (var i = 0; i < SONG.length; i++) times.push(times[i] + SONG[i][1] * BEAT);
-    var end = times[SONG.length];
 
-    /* ① 主旋律 + ② 和声：和声只给 ≥1 拍的长音配，短音配了只会显得毛躁 */
+    /* ① 主旋律 —— 唯一的主角，颗粒分明 */
     for (var m = 0; m < SONG.length; m++) {
-      var dur = SONG[m][1] * BEAT;
-      bell(freqOf(SONG[m][0]), times[m], dur * 1.9, MEL_VOL);
-      if (SONG[m][1] >= 1) {
-        var hv = harmonyFor(SONG[m][0], CHORDS[m]);
-        if (hv !== null) soft(freqOf(nameOf(hv)), times[m], dur * 1.5, HARM_VOL);
-      }
+      bell(freqOf(SONG[m][0]), times[m], SONG[m][1] * BEAT * 1.05, MEL_VOL);
     }
 
-    /* ③ 低音：按「和弦是否变化」切段，每段一个长音，给整首搭地板 */
+    /* ② 和声 —— 只给「2 拍及以上」的长音。
+          给 1 拍的音也配的话，和声就和旋律一样密，两个声部在同一个音区抢，
+          听感立刻发浑；只留给长音，它才起得到「托一下」的作用。 */
+    for (var h = 0; h < SONG.length; h++) {
+      if (SONG[h][1] < 2) continue;
+      var hv = harmonyFor(SONG[h][0], CHORDS[h]);
+      if (hv === null) continue;
+      soft(freqOf(nameOf(hv)), times[h], SONG[h][1] * BEAT * 0.9, HARM_VOL);
+    }
+
+    /* ③ 低音 —— 每个和弦段一个长音，收在段内，绝不拖进下一个和弦 */
     var segStart = 0;
     for (var s = 1; s <= SONG.length; s++) {
       if (s < SONG.length && CHORDS[s] === CHORDS[segStart]) continue;
       var root = CHORDS[segStart];
       var st = times[segStart];
       var len = times[s] - st;
-      bassNote(freqOf(nameOf(midiOf(root) - 12)), st, Math.min(len * 0.92, 2.4));
+      bassNote(freqOf(nameOf(midiOf(root) - 12)), st, Math.min(len * 0.8, 2.1));
       segStart = s;
     }
-
-    var next = end + TAIL;
-    /* ⚠️ 页面切到后台时 setTimeout 会被浏览器节流，回来时 next 可能已经是过去时刻。
-       那样 Web Audio 会把整轮音符「立刻」全部播出来 —— 轰的一下全糊在一起。
-       所以一旦发现晚了，就把这一轮的起点顺延到现在。 */
-    if (next < ctx.currentTime + 0.15) next = ctx.currentTime + 0.3;
-
-    var waitMs = (next - ctx.currentTime - 0.45) * 1000;
-    cycleTimer = setTimeout(function () {
-      if (playing) scheduleCycle(next);
-    }, Math.max(60, waitMs));
   }
 
-  function clearTimer() {
-    if (cycleTimer) { clearTimeout(cycleTimer); cycleTimer = null; }
+  /* ---------- 前瞻调度器 ----------
+     旧做法是「递归 setTimeout」：每轮快放完时才定时排下一轮。
+     问题是页面一卡（放烟花时动辄卡几百毫秒），定时器就晚触发，
+     下一轮的起点已经变成过去时刻 —— Web Audio 会把整轮音符**一次性倾泻出来**，
+     听感就是「突然抢拍、全糊在一起」。这就是「音乐乱了」的机制。
+     现在改成：维护一个**绝对时间轴** nextAt，每 1.5 秒检查一次，
+     只要「未来 6 秒内还没排音符」就继续往后排 —— 单次定时晚多久都不怕。 */
+  var CYCLE = (function () {
+    var t = 0;
+    for (var i = 0; i < SONG.length; i++) t += SONG[i][1] * BEAT;
+    return t + TAIL;
+  })();
+  var LOOKAHEAD = 6;
+  var nextAt = 0, lookTimer = null;
+
+  function tick() {
+    if (!playing || !ctx) return;
+    var now = ctx.currentTime;
+    /* 落后太多（比如刚从后台回来）就从当下重新接上，不去追已经过去的时刻 */
+    if (nextAt < now - 0.25) nextAt = now + 0.3;
+    var guard = 0;
+    while (nextAt < now + LOOKAHEAD && guard++ < 4) {
+      scheduleCycle(nextAt);
+      nextAt += CYCLE;
+    }
+  }
+
+  function stopTimers() {
+    if (lookTimer) { clearInterval(lookTimer); lookTimer = null; }
   }
 
   function emit() {
@@ -422,10 +449,12 @@
     if (playing) return true;
     playing = true;
     started = true;
-    clearTimer();
+    stopTimers();
     killAll();                 /* 兜底：把可能残留的上一轮音符真正停掉，避免叠音 */
     fadeTo(VOL, 1.8);
-    scheduleCycle(ctx.currentTime + 0.25);
+    nextAt = ctx.currentTime + 0.25;
+    tick();
+    lookTimer = setInterval(tick, 1500);
     writePref(true);
     emit();
     return true;
@@ -436,7 +465,7 @@
     if (byUser) userMuted = true;
     if (!playing) { if (byUser) { writePref(false); emit(); } return; }
     playing = false;
-    clearTimer();
+    stopTimers();
     fadeTo(0, 0.7);
     /* 淡出之后把音符真正停掉 —— 否则再点播放会「新的一轮 + 旧的残余」叠着响 */
     setTimeout(killAll, 780);
