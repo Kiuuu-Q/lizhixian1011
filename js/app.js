@@ -2899,12 +2899,14 @@
       undo.addEventListener('click', () => {
         if (!boardReady) return;
         if (!strokes.length) { toast('还没有画东西呢～'); return; }
-        if (!isMine(strokes[strokes.length - 1])) {
+        let mineIndex = strokes.length - 1;
+        while (mineIndex >= 0 && !isMine(strokes[mineIndex])) mineIndex--;
+        if (mineIndex < 0) {
           toast('只能撤销自己画的哦～');
           return;
         }
-        removeBoardStrokes([strokes[strokes.length - 1]]);
-        strokes.pop();
+        removeBoardStrokes([strokes[mineIndex]]);
+        strokes.splice(mineIndex, 1);
         saveBoard();
         repaintAll();
       });
