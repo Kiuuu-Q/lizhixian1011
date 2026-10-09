@@ -1616,6 +1616,21 @@
   }
 
   /* 从服务器把大家上传的照片拉下来 */
+  /* 判断一段字幕是不是「文件名的残渣」—— 历史数据里可能有，一律不显示。
+     典型形态：IMG_0016 / DSC01234 / dji_mimo_20251206_082630_..._photo /
+              32 位哈希名 / 纯数字下划线长串 / 带图片扩展名。
+     起因：更早的版本上传时把 `f.name` 直接写进了 cap，相册下面就显示成文件名了。 */
+  function filenameLike(t) {
+    if (!t) return false;
+    var v = String(t).trim();
+    if (/\.(jpe?g|png|gif|webp|heic|bmp|tiff?)$/i.test(v)) return true;
+    if (/^(img|dsc|dscf|pxl|photo|image|screenshot|微信图片|截屏|照片)[-_ ]?\d*$/i.test(v)) return true;
+    if (/^dji_/i.test(v)) return true;
+    if (/^[0-9a-f]{24,}$/i.test(v)) return true;
+    if (/^[\d_\-]{12,}$/.test(v)) return true;
+    return false;
+  }
+
   function syncPhotos() {
     if (!window.LZX_API) return;
     const base = LZX_API.base();
@@ -1623,7 +1638,8 @@
       if (!d || !d.ok || !Array.isArray(d.photos)) return;
       shared = d.photos.slice().reverse().map(p => ({
         src: base + p.url,
-        cap: p.cap || (p.name ? (p.name + ' 上传的照片') : '大家上传的照片'),
+        /* ⚠️ 不拿 p.name 拼「XX 上传的照片」，也不显示文件名式残渣 */
+        cap: filenameLike(p.cap) ? '' : (p.cap || ''),
         shared: true,
         pid: p.id
       }));
@@ -1802,7 +1818,7 @@
           if (!/^image\//.test(f.type)) continue;
           try {
             const data = await compress(f, 1400, 0.82);
-            added.push({ src: data, cap: (f.name || '').replace(/\.[a-z0-9]+$/i, '') || '我们的回忆' });
+            added.push({ src: data, cap: '' });   /* ⚠️ 不要把文件名当字幕 —— 会显示成 IMG_0016 / dji_mimo_2025..._photo 这种。 */
           } catch (err) { /* 忽略单张失败 */ }
         }
         if (!added.length) {

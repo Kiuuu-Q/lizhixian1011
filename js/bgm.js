@@ -582,7 +582,9 @@
     boomLive++;
     setTimeout(function () { boomLive--; }, 1500);
 
-    var lvl = big ? 0.34 : 0.20;
+    /* ⚠️ 音效要**浮在音乐之上**（用户明确要求）。音乐现在是 MP3（母带响度），
+       所以比「合成音乐时代」抬得更高：0.55 / 0.34。 */
+    var lvl = big ? 0.55 : 0.34;
     /* 每朵花的音色略有不同，不然一串烟花听着像复读 */
     var detune = 0.88 + Math.random() * 0.26;
     /* 色调：暖色（前几个）更闷更沉、尾巴更长；冷色更清亮干脆 */
@@ -678,7 +680,16 @@
      · 任何一步失败（加载失败 / 播放被拒 / 解码不了）都切回合成版，绝不静默没声音。
      ========================================================= */
   var BGM_SRC = 'assets/bgm.mp3';
-  var BGM_VOL = 0.62;                      /* 播放器音量（音频本身已经录好配比） */
+  /* ⚠️ 用户要求「烟花绽放 2 秒后生日快乐歌才开始放」——
+     开场那两秒（第一批烟花升空+炸开）交给音效独自呈现，音乐随后淡入。 */
+  var START_DELAY = 2000;
+  var delayTimer = null;
+  /* ⚠️ 音乐音量（用户反馈「烟花的声音不要被音乐盖过」）。
+     实测这个 MP3 本身录得偏轻：峰值 -4.4 dBFS、RMS 只有 -21 dBFS，
+     所以在 0.62 时它会盖住音效，而压到 0.40 又太小。
+     定在 0.50：音乐峰值约 0.30，音效（boom 0.55）约 0.35~0.50 —— 音效明显浮在上面，
+     同时两者相加不超过 0.8，不会削波。 */
+  var BGM_VOL = 0.50;
   var GAP_MIN = 1.0, GAP_MAX = 2.0;        /* 每次循环之间隔 1~2 秒 */
   var audioEl = null, gapTimer = null, fadeTimer = null;
   var usingFile = false, synthOnly = false; /* synthOnly：文件失败过，之后一直用合成 */
@@ -783,7 +794,13 @@
     started = true;
     stopTimers();
     killAll();                 /* 兜底：把可能残留的上一轮合成音符真正停掉，避免叠音 */
-    if (synthOnly) startSynth(); else startFile();
+    /* 音乐延后 START_DELAY 毫秒进来：先让开场烟花自己响那两秒 */
+    if (delayTimer) clearTimeout(delayTimer);
+    delayTimer = setTimeout(function () {
+      delayTimer = null;
+      if (!playing) return;              /* 这两秒里被暂停了就别起 */
+      if (synthOnly) startSynth(); else startFile();
+    }, START_DELAY);
     writePref(true);
     emit();
     return true;
@@ -795,6 +812,8 @@
     if (!playing) { if (byUser) { writePref(false); emit(); } return; }
     playing = false;
     stopTimers();
+    /* 还没到点的那次「延后起播」也要取消，否则暂停后音乐自己冒出来 */
+    if (delayTimer) { clearTimeout(delayTimer); delayTimer = null; }
     if (gapTimer) { clearTimeout(gapTimer); gapTimer = null; }   /* 别在暂停后偷偷接上下一轮 */
     if (usingFile && audioEl) {
       fadeAudio(0, 700, function () { try { audioEl.pause(); } catch (e) {} });
