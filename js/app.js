@@ -2428,7 +2428,7 @@
      ========================================================= */
   const board    = $('#board');
   const boardHint = $('#boardHint');
-  const BW = 1200, BH = 700;            // 逻辑坐标，和显示尺寸无关
+  const BW = 1200, BH = 1400;            // 逻辑坐标，和显示尺寸无关
   const bdctx = board ? board.getContext('2d') : null;
 
   /* 已完成的笔画单独放一层，画面板时「已画好的 + 正在画的」分开合成，
@@ -2751,6 +2751,7 @@
 
   function sizeBoard() {
     if (!board || !bdctx) return;
+    board.style.setProperty('--board-ar', BW + ' / ' + BH);
     const cssW = board.clientWidth || 900;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     /* 位图宽高严格按 BW:BH 生成，和 CSS 的 aspect-ratio 一致，
