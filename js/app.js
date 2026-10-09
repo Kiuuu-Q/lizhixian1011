@@ -1568,14 +1568,15 @@
   /* =========================================================
      4. 回忆放映机
      ========================================================= */
-  /* 内置样片 —— 相册一打开就有东西看。
-     ⚠️ 这几张曾经被整段撤下、连素材图都从磁盘删了（见 git d02e7f8），
-        已经恢复。以后真要撤，先问清楚，并且**别删 assets 里的原图**。 */
-  const DEFAULT_ITEMS = [
-    { src: 'assets/cake.jpg', cap: '今天的主角 —— 她的生日蛋糕 🎂' },
-    { src: 'assets/avatar.jpg', cap: '她喜欢的刘耀文，也来一起过生日 🐱' },
-    { src: 'assets/sign.jpg', cap: 'To 李芷贤 · Happy Birthday' }
-  ];
+  /* 内置样片 —— **按作者要求先清空**，放映机留给她们自己上传的照片。
+     ⚠️ 图片素材还老老实实留在 assets/ 里（cake.jpg / avatar.jpg / sign.jpg），**一张没删**。
+        想放回来的话，把下面三行取消注释就行，不用重新找图：
+           { src: 'assets/cake.jpg',   cap: '今天的主角 —— 她的生日蛋糕 🎂' },
+           { src: 'assets/avatar.jpg', cap: '她喜欢的刘耀文，也来一起过生日 🐱' },
+           { src: 'assets/sign.jpg',   cap: 'To 李芷贤 · Happy Birthday' }
+     ⚠️ 千万别学 d02e7f8 那次：撤图的同时把素材图删了、还顺手加了「自动清空本机相册」——
+        那是不可逆的数据损失。撤内容可以，删素材和动用户数据不行。 */
+  const DEFAULT_ITEMS = [];
 
   const GAL_KEY = 'lzx_gallery';
   const slideWindow = $('#slideWindow');
@@ -1770,14 +1771,16 @@
     $$('[data-act="next"]').forEach(b => b.addEventListener('click', () => { go(1); }));
 
     if (resetBtn) {
-      /* 「恢复默认」= 撤掉这台设备上加的照片，回到内置样片。
-         （别人传到网上的那些不归它管，得由上传的人自己撤。） */
+      /* 有内置样片时它是「恢复默认」（撤掉本机的、回到样片）；
+         没样片时它就是「清空相册」（只清本机加的那些）。
+         —— 别人传到网上的不归它管，得由上传的人自己撤。 */
+      resetBtn.textContent = DEFAULT_ITEMS.length ? '恢复默认' : '清空相册';
       resetBtn.addEventListener('click', () => {
-        if (!gallery.length) { toast('现在就是默认的几张啦'); return; }
+        if (!gallery.length) { toast('相册现在就是空的'); return; }
         gallery = [];
         store.set(GAL_KEY, gallery);
         buildDeck(true);
-        toast('已恢复默认照片');
+        toast(DEFAULT_ITEMS.length ? '已恢复默认照片' : '已清空这台设备上的照片');
       });
     }
 
@@ -1866,7 +1869,13 @@
     }
 
     syncPhotos();
-    preload(DEFAULT_ITEMS[0].src);
+    /* 预加载第一张。⚠️ 相册**可能是空的**（按作者要求先清空样片），
+       所以必须先判空 —— 原来直接写 `DEFAULT_ITEMS[0].src`，
+       数组一空就抛 TypeError，而这里在初始化流程里，
+       **异常会把后面的代码整段打断**：烟花不发射、蛋糕不转、主循环根本不启动。
+       （这个坑真踩过：一次清空样片之后，整个页面变成静止画面。） */
+    const firstPick = items[0] || DEFAULT_ITEMS[0];
+    if (firstPick && firstPick.src) preload(firstPick.src);
   }
 
   /* =========================================================

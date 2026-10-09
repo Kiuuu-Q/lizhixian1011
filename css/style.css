@@ -2145,6 +2145,11 @@ button, input, textarea { font: inherit; color: inherit; }
 
 .slide-deck { position: absolute; inset: 0; }
 
+/* ⚠️ 相册空着时要把空的图片框整个藏掉 ——
+   <img> 没有 src 时，浏览器会把 alt 文字直接画出来（这里是「回忆照片」），
+   和下面那句提示叠在一起，看着像乱码。 */
+.slide-window.is-empty .slide-deck { display: none; }
+
 /* 相册空着时不留下一个白框，窗口里给一句话 */
 .slide-window.is-empty::after {
   content: '相册空空的 —— 用下面的「＋ 添加照片」放几张进来吧 ✦';

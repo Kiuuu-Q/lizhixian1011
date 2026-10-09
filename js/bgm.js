@@ -94,7 +94,7 @@
     }
   }
 
-  var ctx = null, master = null, bus = null;
+  var ctx = null, master = null, bus = null, musicGain = null;
   var playing = false, started = false;
   var listeners = [];
   /* ⚠️ 区分两件事：
@@ -135,8 +135,18 @@
     if (!AC) return false;
     try { ctx = new AC(); } catch (e) { return false; }
 
+    /* 总输出：**固定 1，不再淡入**。
+       ⚠️ 这里原来是「master.gain 从 0 淡入到 VOL、耗时 1.8 秒」——
+          那是为「音乐淡入」设计的，但**音效也被它一起拖累**了：
+          开场烟花在点击后 0.56 秒就炸了，那会儿 master 才升到 12%，
+          再乘上 whoosh 本身就很轻的音量 → 听感就是「一开始的烟花没有声音」。
+          现在拆成两条独立支路：音乐走 musicGain（要淡入淡出），音效直接进 bus。 */
     master = ctx.createGain();
-    master.gain.value = 0;
+    master.gain.value = 1;
+
+    /* 音乐的专属音量层：start() 淡入、pause() 淡出 —— 只作用于音乐 */
+    musicGain = ctx.createGain();
+    musicGain.gain.value = 0;
 
     /* ⚠️ 这里原本挂着一个限幅器（threshold -10dB / ratio 6:1）——
        它是个「听着乱」的隐形元凶：八音盒每个音都是很尖的瞬态，
@@ -152,7 +162,8 @@
     bus = ctx.createGain();
     bus.gain.value = 1;
 
-    bus.connect(master);
+    musicGain.connect(bus);       /* 音乐：musicGain → bus → 输出（要淡入淡出） */
+    bus.connect(master);          /* 音效直接进 bus（随点随响，不参与淡入） */
     bus.connect(verb);
     verb.connect(verbGain);
     verbGain.connect(master);
@@ -180,7 +191,7 @@
       g.gain.exponentialRampToValueAtTime(peak, at + 0.006);
       g.gain.exponentialRampToValueAtTime(0.0001, end);
       osc.connect(g);
-      g.connect(bus);
+      g.connect(musicGain);
       osc.start(at);
       osc.stop(end + 0.04);
       track(osc);
@@ -202,7 +213,7 @@
       g.gain.exponentialRampToValueAtTime(Math.max(vol * p[1], 0.0002), at + 0.012);
       g.gain.exponentialRampToValueAtTime(0.0001, end);
       osc.connect(g);
-      g.connect(bus);
+      g.connect(musicGain);
       osc.start(at);
       osc.stop(end + 0.04);
       track(osc);
@@ -222,7 +233,7 @@
     g.gain.exponentialRampToValueAtTime(BASS_VOL, at + 0.05);
     g.gain.exponentialRampToValueAtTime(0.0001, end);
     osc.connect(g);
-    g.connect(bus);
+    g.connect(musicGain);
     osc.start(at);
     osc.stop(end + 0.04);
     track(osc);
@@ -327,14 +338,15 @@
     for (var i = 0; i < listeners.length; i++) listeners[i](playing);
   }
 
+  /* 只淡音乐（音乐专属的 musicGain）—— 音效不被它牵连 */
   function fadeTo(v, sec) {
-    if (!master || !ctx) return;
+    if (!musicGain || !ctx) return;
     var now = ctx.currentTime;
     try {
-      master.gain.cancelScheduledValues(now);
-      master.gain.setValueAtTime(Math.max(master.gain.value, 0.0001), now);
-      master.gain.linearRampToValueAtTime(v, now + sec);
-    } catch (e) { master.gain.value = v; }
+      musicGain.gain.cancelScheduledValues(now);
+      musicGain.gain.setValueAtTime(Math.max(musicGain.gain.value, 0.0001), now);
+      musicGain.gain.linearRampToValueAtTime(v, now + sec);
+    } catch (e) { musicGain.gain.value = v; }
   }
 
   /* =========================================================
@@ -360,10 +372,23 @@
     bp.frequency.exponentialRampToValueAtTime(1500, at + dur * 0.92);
     var g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, at);
-    g.gain.exponentialRampToValueAtTime(0.05, at + dur * 0.55);
+    g.gain.exponentialRampToValueAtTime(0.10, at + dur * 0.55);
     g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
     src.connect(bp); bp.connect(g); g.connect(bus);
     src.start(at); src.stop(at + dur + 0.05);
+
+    /* 再叠一层往上扫的「哨音」：真实烟花升空那声「咻」其实是燃料啸叫，
+       只靠带通噪声太「沙沙」，加一条正弦扫频才够尖锐、够远。 */
+    var tw = ctx.createOscillator();
+    tw.type = 'sine';
+    tw.frequency.setValueAtTime(620, at);
+    tw.frequency.exponentialRampToValueAtTime(1750, at + dur * 0.95);
+    var twg = ctx.createGain();
+    twg.gain.setValueAtTime(0.0001, at);
+    twg.gain.exponentialRampToValueAtTime(0.026, at + dur * 0.6);
+    twg.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    tw.connect(twg); twg.connect(bus);
+    tw.start(at); tw.stop(at + dur + 0.05);
   }
 
   function boom(big, toneIndex) {
@@ -375,7 +400,9 @@
     boomLive++;
     setTimeout(function () { boomLive--; }, 900);
 
-    var lvl = big ? 0.42 : 0.27;
+    /* ⚠️ 音效现在直通 master（1.0），不再被音乐的淡入衰减 ——
+       峰值要和音乐（0.40）加在一起不越过 1.0，所以定在 0.36 / 0.22。 */
+    var lvl = big ? 0.36 : 0.22;
     /* 每朵花的音高略有不同，不然一串烟花听着像复读 */
     var detune = 0.88 + Math.random() * 0.3;
     /* 色调微调音色：暖色偏低沉，冷色偏清脆 */
@@ -387,12 +414,12 @@
     /* ① 低频推力：那一下「闷」的冲击 */
     var thump = ctx.createOscillator();
     thump.type = 'sine';
-    thump.frequency.setValueAtTime(160 * detune, now);
-    thump.frequency.exponentialRampToValueAtTime(42 * detune, now + 0.24);
+    thump.frequency.setValueAtTime(185 * detune, now);
+    thump.frequency.exponentialRampToValueAtTime(36 * detune, now + 0.26);
     var tg = ctx.createGain();
     tg.gain.setValueAtTime(0.0001, now);
     tg.gain.exponentialRampToValueAtTime(lvl * 0.85, now + 0.012);
-    tg.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
+    tg.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
     thump.connect(tg); tg.connect(bus);
     thump.start(now); thump.stop(now + 0.5);
 
@@ -410,6 +437,14 @@
     src.connect(lp); lp.connect(ng); ng.connect(bus);
     src.start(now); src.stop(now + 0.8);
 
+    /* 远处回声：真实烟花炸完，隔两三百毫秒会从楼宇/山谷里弹一下回来。
+       就这一下，让声音一下子「有空间感」，不再是耳边的干响。 */
+    var dly = ctx.createDelay(1.0);
+    dly.delayTime.value = 0.24 + Math.random() * 0.14;
+    var dg = ctx.createGain();
+    dg.gain.value = big ? 0.20 : 0.12;
+    ng.connect(dly); dly.connect(dg); dg.connect(bus);
+
     /* ③ 噼啪余响：大烟花才有，一团细碎的火星光 */
     if (big) {
       var cr = ctx.createBufferSource();
@@ -419,11 +454,11 @@
       hp.frequency.value = 2400;
       var cg = ctx.createGain();
       cg.gain.setValueAtTime(0.0001, now + 0.16);
-      cg.gain.exponentialRampToValueAtTime(lvl * 0.2, now + 0.3);
-      cg.gain.exponentialRampToValueAtTime(0.0001, now + 1.5);
+      cg.gain.exponentialRampToValueAtTime(lvl * 0.26, now + 0.3);
+      cg.gain.exponentialRampToValueAtTime(0.0001, now + 1.7);
       cr.connect(hp); hp.connect(cg); cg.connect(bus);
       cr.start(now); cg.gain.setValueAtTime(0.0001, now);
-      cr.stop(now + 1.6);
+      cr.stop(now + 1.8);
     }
   }
 
