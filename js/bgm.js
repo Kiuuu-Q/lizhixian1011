@@ -23,6 +23,12 @@
          所以新增声部一律**错开音区**：高八度走上面、和声走下面、滑音只做引子。
      2. 音效 —— 烟花升空的「咻」与炸开的「砰」，由烟花引擎逐朵触发
 
+     ⚠️ 2026-10-09 起，**音乐改成播放真实音频文件**（`assets/bgm.mp3`，作者提供的
+        钢琴+八音盒多乐器版）。原因：合成版再怎么加声部，也到不了真录音的丰富度。
+        · 循环由 `ended` 事件接管，**每次之间隔 1~2 秒**（随机，免得间隔一模一样显得机械）。
+        · 下面这套合成编配**保留作后备**：音频加载/播放失败时自动切回去，绝不至于没声音。
+        · 烟花音效仍由 Web Audio 合成 —— 音乐和音效是**两条完全独立的通道**。
+
    为什么全部用合成、不用音频文件：
      · 零体积、零请求，弱网也能响
      · 不涉及任何音乐版权
@@ -73,13 +79,16 @@
   ];
 
   var BEAT = 0.72;          /* 一拍的秒数 → 约 83 BPM */
-  var VOL = 0.38;           /* 音乐总增益（声部变多了，收一点给峰值留余量） */
-  var MEL_VOL = 0.28;       /* ① 主旋律 —— 主角 */
-  var MEL2_VOL = 0.085;     /* ② 高八度加厚 —— 约为主旋律的三成 */
-  var HARM_VOL = 0.055;     /* ③ 和声（每个音） */
+  var VOL = 0.40;           /* 音乐总增益（层多了，但单层都压得低，整体还能抬一点） */
+  var MEL_VOL = 0.26;       /* ① 主旋律 —— 主角 */
+  /* ⚠️ 「还是太单调」的教训：旧版把新加的层音量压得太保守（高八度 0.085、风铃 0.032），
+     结果**编配表上看是六声部，耳朵里还是一条旋律**。这里一律抬到听得见的程度。 */
+  var MEL2_VOL = 0.14;      /* ② 高八度加厚（旧 0.085 → 听不出来） */
+  var HARM_VOL = 0.062;     /* ③ 和声（每个音） */
+  var ARP_VOL = 0.048;      /* ⑦ 琶音伴奏 —— 音量小，但它**一直在流动**，是最见效的一层 */
   var BASS_VOL = 0.055;     /* ④ 低音 —— 只当地基 */
   var GLISS_VOL = 0.042;    /* ⑤ 竖琴滑音 —— 引子，极轻 */
-  var CHIME_VOL = 0.032;    /* ⑥ 风铃 —— 点一下就走 */
+  var CHIME_VOL = 0.05;     /* ⑥ 风铃（旧 0.032 → 抬起来） */
   var LEAD = 0.46;          /* 每轮开头的引子（竖琴刮奏）时长 */
   var TAIL = 2.5 * BEAT;    /* 一轮之间留点呼吸（时值收紧了，这里补回来一点） */
 
@@ -291,6 +300,51 @@
     }
   }
 
+  /* ---------- ⑦ 琶音用的竖琴音色 ----------
+     泛音取**整数谐波列** [1,2,3] → 拨弦感（竖琴/吉他），和 bell 的非整数泛音（金属味）区分开。
+     起音比 bell 稍慢、衰减更快，听感是「柔」的，适合铺在底下一直走。 */
+  function harp(freq, at, vol) {
+    var partials = [[1, 1.00, 0.60], [2, 0.30, 0.42], [3, 0.10, 0.30]];
+    for (var i = 0; i < partials.length; i++) {
+      var p = partials[i];
+      var osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq * p[0];
+      var g = ctx.createGain();
+      var end = at + 0.62 * p[2];
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(Math.max(vol * p[1], 0.0002), at + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, end);
+      osc.connect(g); g.connect(musicGain);
+      osc.start(at); osc.stop(end + 0.05);
+      track(osc);
+    }
+  }
+
+  /* ---------- ⑦ 琶音伴奏：每个和弦段的分解和弦 ----------
+     ⚠️ 这层就是「不单调」的关键。旧版 26 个音光秃秃地循环 ——
+        旋律一唱，底下只有偶尔一个低音长音，听感自然空、自然单调。
+        现在每个和弦段都拆成「根 → 五 → 八 → 三」的流动音型，每半拍一个音。
+     音区刻意放在主旋律**下方**（C4~C5 一带）且音量只有主旋律的 1/5 ——
+        所以它是「伴奏在走」，不是「又来一条旋律抢」。
+     ⚠️ 每轮的分解起点错开一位（`(i + off) % 4`），这样连续两轮听上去不一样，不会腻。 */
+  function arpLayer(times) {
+    var off = roundNo % 4;
+    var segStart = 0;
+    for (var s = 1; s <= SONG.length; s++) {
+      if (s < SONG.length && CHORDS[s] === CHORDS[segStart]) continue;
+      var r = midiOf(CHORDS[segStart]);
+      var st = times[segStart];
+      var beats = (times[s] - st) / BEAT;
+      var pat = [r, r + 7, r + 12, r + 4];       /* 根 - 五 - 八 - 三 */
+      var n = Math.max(1, Math.round(beats / 0.5));
+      for (var i = 0; i < n; i++) {
+        harp(freqOf(nameOf(pat[(i + off) % 4])), st + i * 0.5 * BEAT, ARP_VOL);
+      }
+      segStart = s;
+    }
+  }
+
   /* ---------- ⑤ 竖琴滑音：一串极短的八音盒音，从低到高（或从高到低）扫过 ----------
      只放在每轮的**开头**当引子 —— 那一段主旋律还没进来，不会抢音域。
      越往后稍微响一点，像刮奏收尾那一下「提」起来。 */
@@ -303,6 +357,22 @@
       bell(freqOf(nameOf(m)), at + i * gap, 0.5, vol * (0.7 + 0.6 * i / Math.max(n, 1)));
     }
   }
+
+  /* ---------- 乐句力度：给 26 个音的循环加上「呼吸」 ----------
+     四个乐句（5 5 6 5 1̇ 7 / 5 5 6 5 2̇ 1̇ / 5 5 5̇ 3̇ 1̇ 7 6 / 4̇ 4̇ 3̇ 1̇ 2̇ 1̇）各有不同的整体力度，
+     句内再走一条「句首弱 → 句中最强 → 句尾收」的弧线。
+     没有它，同一段旋律反复播放会像机械循环 —— 这也是「单调」的一部分来源。 */
+  var PHRASE = [0, 6, 12, 19, 25];                 /* 每句的起止索引（+1） */
+  var PHRASE_DYN = [0.90, 1.00, 1.12, 0.96];       /* 四句的整体力度 */
+  function dynOf(i) {
+    var p = 0;
+    while (p < 4 && i >= PHRASE[p + 1]) p++;
+    var start = PHRASE[p], end = PHRASE[p + 1] - 1;
+    var t = (i - start) / Math.max(end - start, 1);
+    return PHRASE_DYN[p] * (0.84 + 0.28 * Math.sin(Math.PI * t));
+  }
+
+  var roundNo = 0;                                 /* 已排的轮次，给琶音换个起点用 */
 
   /* 大三和弦的音（本项目用到的和弦都是大三和弦） */
   function triad(rootName) {
@@ -358,28 +428,33 @@
           「上弦 → 开奏」也格外有仪式感。 */
     gliss(60, 84, from, 3, GLISS_VOL);
 
-    /* ① 主旋律 + ② 高八度加厚 + ⑥ 风铃点缀 */
+    /* ⑦ 琶音伴奏 —— 先铺底，旋律再进来。
+          这一层是「不单调」的核心：旋律在唱的时候，底下一直有东西在走。 */
+    arpLayer(times);
+
+    /* ① 主旋律 + ② 高八度加厚 + ⑥ 风铃点缀（都带乐句力度） */
     for (var m = 0; m < SONG.length; m++) {
       var f = freqOf(SONG[m][0]);
       var beats = SONG[m][1];
       var dur = beats * BEAT;
+      var dyn = dynOf(m);
       /* ① 主角，颗粒分明 */
-      bell(f, times[m], dur * 1.05, MEL_VOL);
-      /* ② 高八度：跟着旋律加厚，音量只有主旋律的三成 ——
-            这就是音乐盒「双层梳齿」的做法，听感立刻从「单音」变「合奏」。 */
-      bell2(f * 2, times[m], dur * 0.85, MEL2_VOL);
-      /* ⑥ 风铃：只在 2 拍以上的长音上，在音的后段点一颗高音铃铛 */
-      if (beats >= 2) chime(f * 2, times[m] + dur * 0.55, CHIME_VOL);
+      bell(f, times[m], dur * 1.05, MEL_VOL * dyn);
+      /* ② 高八度：跟着旋律加厚（音乐盒的「双层梳齿」）——
+            音量必须足够大才听得出来是「合奏」而不是「单音」。 */
+      bell2(f * 2, times[m], dur * 0.85, MEL2_VOL * dyn);
+      /* ⑥ 风铃：1.5 拍以上的音，在音的后段点一颗高音铃铛 */
+      if (beats >= 1.5) chime(f * 2, times[m] + dur * 0.5, CHIME_VOL * dyn);
     }
 
-    /* ③ 和声 —— 只给「2 拍及以上」的长音，而且给**双音**（三度 + 五度）。
-          给 1 拍的音也配的话，和声就和旋律一样密，两个声部在同一个音区抢，
-          听感立刻发浑；只留给长音，它才起得到「托一下」的作用。 */
+    /* ③ 和声 —— ≥1 拍的长音给**双音**（三度 + 五度）。
+          ⚠️ 旧版只给 ≥2 拍，等于大部分旋律音底下是空的 —— 这也是「单调」的来源。
+             放宽到 ≥1 拍，和声才托得住整条旋律；双音比单音厚一倍。 */
     for (var h = 0; h < SONG.length; h++) {
-      if (SONG[h][1] < 2) continue;
+      if (SONG[h][1] < 1) continue;
       var hs = harmonySet(SONG[h][0], CHORDS[h]);
       for (var k = 0; k < hs.length; k++) {
-        soft(freqOf(nameOf(hs[k])), times[h], SONG[h][1] * BEAT * 0.9, HARM_VOL);
+        soft(freqOf(nameOf(hs[k])), times[h], SONG[h][1] * BEAT * 0.9, HARM_VOL * dynOf(h));
       }
     }
 
@@ -393,6 +468,8 @@
       bassNote(freqOf(nameOf(midiOf(root) - 12)), st, Math.min(len * 0.8, 2.1));
       segStart = s;
     }
+
+    roundNo++;
   }
 
   /* ---------- 前瞻调度器 ----------
@@ -591,9 +668,100 @@
     }
   }
 
+  /* =========================================================
+     背景音乐：播放真实音频文件
+     ---------------------------------------------------------
+     · 不用 `loop` 属性 —— 我们需要**每次循环之间留 1~2 秒空白**，所以自己监听
+       `ended` 再延时重播。
+     · 音量用定时器做淡入淡出（HTMLAudioElement 不支持 Web Audio 那种自动化曲线）。
+     · `preload='auto'`：页面加载时就在后台悄悄缓冲好，点「进入」时立刻能响。
+     · 任何一步失败（加载失败 / 播放被拒 / 解码不了）都切回合成版，绝不静默没声音。
+     ========================================================= */
+  var BGM_SRC = 'assets/bgm.mp3';
+  var BGM_VOL = 0.62;                      /* 播放器音量（音频本身已经录好配比） */
+  var GAP_MIN = 1.0, GAP_MAX = 2.0;        /* 每次循环之间隔 1~2 秒 */
+  var audioEl = null, gapTimer = null, fadeTimer = null;
+  var usingFile = false, synthOnly = false; /* synthOnly：文件失败过，之后一直用合成 */
+
+  function ensureAudio() {
+    if (audioEl) return audioEl;
+    if (synthOnly) return null;
+    try {
+      audioEl = new Audio();
+      audioEl.preload = 'auto';
+      audioEl.loop = false;                /* 自己管循环，好控制间隔 */
+      audioEl.volume = 0;
+      audioEl.addEventListener('ended', onAudioEnded);
+      audioEl.addEventListener('error', failToSynth);
+      audioEl.src = BGM_SRC;
+    } catch (e) { audioEl = null; synthOnly = true; }
+    return audioEl;
+  }
+
+  /* 播完一遍：等 1~2 秒，再从头来 */
+  function onAudioEnded() {
+    if (!playing || !usingFile || !audioEl) return;
+    var gap = (GAP_MIN + Math.random() * (GAP_MAX - GAP_MIN)) * 1000;
+    if (gapTimer) clearTimeout(gapTimer);
+    gapTimer = setTimeout(function () {
+      gapTimer = null;
+      if (!playing || !audioEl) return;
+      try { audioEl.currentTime = 0; } catch (e) {}
+      var p = audioEl.play();
+      if (p && p.catch) p.catch(function () { failToSynth(); });
+    }, gap);
+  }
+
+  /* 音频这条路走不通 → 切回合成版（只在第一次触发时动作） */
+  function failToSynth() {
+    if (synthOnly) return;
+    synthOnly = true;
+    usingFile = false;
+    if (audioEl) { try { audioEl.pause(); } catch (e) {} }
+    if (window.console && console.info) {
+      console.info('[bgm] 音频文件不可用，已切回合成版（不影响音效）');
+    }
+    if (playing) startSynth();
+  }
+
+  /* 播放器音量的淡入淡出（用定时器，因为没法用 Web Audio 的自动化曲线） */
+  function fadeAudio(to, ms, done) {
+    if (!audioEl) { if (done) done(); return; }
+    if (fadeTimer) { clearInterval(fadeTimer); fadeTimer = null; }
+    var from = audioEl.volume, steps = 24, i = 0;
+    fadeTimer = setInterval(function () {
+      i++;
+      audioEl.volume = Math.max(0, Math.min(1, from + (to - from) * (i / steps)));
+      if (i >= steps) {
+        clearInterval(fadeTimer); fadeTimer = null;
+        if (done) done();
+      }
+    }, Math.max(16, ms / steps));
+  }
+
+  /* 起音乐的两种方式：优先文件，失败才用合成 */
+  function startFile() {
+    usingFile = true;
+    var a = ensureAudio();
+    if (!a) { synthOnly = true; startSynth(); return; }
+    a.volume = 0;
+    var pr = a.play();
+    if (pr && pr.catch) pr.catch(function () { failToSynth(); });
+    fadeAudio(BGM_VOL, 1600);
+  }
+
+  function startSynth() {
+    usingFile = false;
+    fadeTo(VOL, 1.8);
+    nextAt = ctx.currentTime + 0.25;
+    tick();
+    if (!lookTimer) lookTimer = setInterval(tick, 1500);
+  }
+
   /* 只解锁音频（建上下文 + resume），不排音乐。
      开场点击时调用：这样即使用户关掉了背景音乐，烟花音效也还能响。 */
   function arm() {
+    ensureAudio();               /* 点「进入」时把音频加载安排上（preload 早就该在跑了） */
     if (!build()) return false;
     if (ctx.state === 'suspended' && ctx.resume) {
       try { ctx.resume(); } catch (e) {}
@@ -614,11 +782,8 @@
     playing = true;
     started = true;
     stopTimers();
-    killAll();                 /* 兜底：把可能残留的上一轮音符真正停掉，避免叠音 */
-    fadeTo(VOL, 1.8);
-    nextAt = ctx.currentTime + 0.25;
-    tick();
-    lookTimer = setInterval(tick, 1500);
+    killAll();                 /* 兜底：把可能残留的上一轮合成音符真正停掉，避免叠音 */
+    if (synthOnly) startSynth(); else startFile();
     writePref(true);
     emit();
     return true;
@@ -630,9 +795,14 @@
     if (!playing) { if (byUser) { writePref(false); emit(); } return; }
     playing = false;
     stopTimers();
-    fadeTo(0, 0.7);
-    /* 淡出之后把音符真正停掉 —— 否则再点播放会「新的一轮 + 旧的残余」叠着响 */
-    setTimeout(killAll, 780);
+    if (gapTimer) { clearTimeout(gapTimer); gapTimer = null; }   /* 别在暂停后偷偷接上下一轮 */
+    if (usingFile && audioEl) {
+      fadeAudio(0, 700, function () { try { audioEl.pause(); } catch (e) {} });
+    } else {
+      fadeTo(0, 0.7);
+      /* 淡出之后把音符真正停掉 —— 否则再点播放会「新的一轮 + 旧的残余」叠着响 */
+      setTimeout(killAll, 780);
+    }
     if (byUser) writePref(false);
     emit();
   }
@@ -682,6 +852,10 @@
 
   /* 读一次用户偏好：显式关过 -> userMuted */
   userMuted = !readPref();
+
+  /* 页面一加载就在后台把音频缓冲好（preload=auto，不自动播放，浏览器会拒绝的）——
+     这样点「进入」的那一刻就能出声，不用等下载。 */
+  ensureAudio();
 
   /* 切到别的 App / 锁屏时自动停，回来不自动响（礼貌一些） */
   document.addEventListener('visibilitychange', function () {
