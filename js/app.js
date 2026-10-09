@@ -1688,6 +1688,7 @@
   let cells = [];
   let iPrev = 0, iCur = 1, iNext = 2;
   let idx = 0;
+  let slideCounter = null;
   let playing = true;
   let acc = 0;
   const DUR = 4800;
@@ -1742,8 +1743,9 @@
     boardRequest('/api/photos').then(d => {
       if (!Array.isArray(d.photos)) return;
       cloudPhotos = d.photos.slice().reverse().map(p => ({src:BOARD_CLOUD+p.url,cap:filenameLike(p.cap)?'':(p.cap||''),shared:true,pid:p.id}));
-      gallery.forEach(it => { const id = 'p'+it.uploadId; if (it.uploadId && cloudPhotos.some(p=>p.pid===id)) { it.cloudUp=true;it.cloudPid=id; } });
-      updateSharedPhotos(); saveGallery(); renderPhotoSync();
+      let changed = false;
+      gallery.forEach(it => { const id = 'p'+it.uploadId; if (it.uploadId && !it.cloudUp && cloudPhotos.some(p=>p.pid===id)) { it.cloudUp=true;it.cloudPid=id;changed=true; } });
+      updateSharedPhotos(); if (changed) saveGallery(); renderPhotoSync();
     }).catch(() => { if (slideHint) { slideHint.textContent = '共享相册暂未读取成功 · 已保留副本，会自动重试'; slideHint.classList.add('warn'); } });
   }
   async function retryPhotos() {
@@ -1756,7 +1758,7 @@
         if (!it.uploadId) it.uploadId = Date.now().toString(36)+Math.random().toString(36).slice(2,8);
         saveGallery();
         const id='p'+it.uploadId;
-        const d=await boardRequest('/api/photos',{id,visitor:ME,key:boardCloudKey,data:it.src,cap:it.cap||'',name:it.name||''},60000);
+        const d=await boardRequest('/api/photos',{id,visitor:boardCloudVisitor,key:boardCloudKey,data:it.src,cap:it.cap||'',name:it.name||''},60000);
         if (!d.photo || d.photo.id!==id) throw new Error('上传未确认');
         it.cloudUp=true;it.cloudPid=id;saveGallery();
       }
@@ -1788,6 +1790,8 @@
     if (!item) return;
     cell.i = mi;              /* 记下这一格现在放的是第几张，管理删图要用 */
     cell.img.fetchPriority = mi === idx ? 'high' : 'low';
+    cell.src = item.src; cell.retryAt = 0;
+    cell.img.onerror = () => { cell.retryAt = Date.now() + 10000; };
     cell.img.src = item.src;
     if (cell.img.decode) cell.img.decode().catch(() => {});
   }
@@ -1798,6 +1802,7 @@
     cells[iCur].el.classList.add('is-current');
     cells[iNext].el.classList.add('is-next');
     const cur = items.length ? items[idx % items.length] : null;
+    if (slideCounter) slideCounter.textContent = items.length ? (idx + 1) + ' / ' + items.length : '0 / 0';
     if (captionEl) {
       captionEl.style.opacity = '0';
       setTimeout(() => {
@@ -1810,11 +1815,13 @@
 
   function buildDeck(rebuild) {
     if (!deck) return;
+    const current = items[idx];
     buildItems();
+    const retained = current ? items.findIndex(p => current.pid ? p.pid === current.pid : p.src === current.src) : -1;
+    idx = retained >= 0 ? retained : Math.min(idx, Math.max(0, items.length - 1));
     if (rebuild || cells.length === 0) {
       deck.innerHTML = '';
       cells = [makeCell(), makeCell(), makeCell()];
-      idx = 0;
       iPrev = 2; iCur = 0; iNext = 1;
       loadCell(cells[iCur], idx);
       loadCell(cells[iPrev], idx - 1);
@@ -1827,8 +1834,8 @@
     }
     setRoles();
     syncEmpty();
-    acc = 0;
-    if (barEl) barEl.style.width = '0%';
+    if (!current || retained < 0) acc = 0;
+    if (barEl) barEl.style.width = clamp(acc / DUR * 100, 0, 100) + '%';
   }
   function ctx_bindClicks() {}
 
@@ -1844,15 +1851,16 @@
     if (!cells.length || items.length < 2) return;
     idx = ((idx + step) % items.length + items.length) % items.length;
 
-    /* 轮转角色：当前 → 上一张，下一张 → 当前，旧的上一张 → 装载新的下一张 */
-    const oldPrev = iPrev;
-    iPrev = iCur;
-    iCur = iNext;
-    iNext = oldPrev;
+    if (step < 0) {
+      const oldNext = iNext;
+      iNext = iCur; iCur = iPrev; iPrev = oldNext;
+      loadCell(cells[iPrev], idx - 1);
+    } else {
+      const oldPrev = iPrev;
+      iPrev = iCur; iCur = iNext; iNext = oldPrev;
+      loadCell(cells[iNext], idx + 1);
+    }
 
-    /* 下一张提前就位（此刻它在最前面的透明层里悄悄加载） */
-    const nextIdx = (idx + (items.length > 2 ? 1 : 1)) % items.length;
-    loadCell(cells[iNext], nextIdx);
     if (!PERF.mobile) preload(items[(idx + 2) % items.length].src);
 
     setRoles();
@@ -1862,6 +1870,14 @@
 
   function tickSlides(dt) {
     if (!cells.length || items.length < 2 || !playing) return;
+    const nextImage = cells[iNext].img;
+    if (!nextImage.complete || !nextImage.naturalWidth) {
+      const next = cells[iNext];
+      if (next.retryAt && Date.now() >= next.retryAt) { next.retryAt = Date.now() + 10000; nextImage.src = next.src + (next.src.includes('?') ? '&' : '?') + 'retry=' + Date.now(); }
+      if (slideCounter) slideCounter.textContent = (idx + 1) + ' / ' + items.length + ' · 下一张加载中…';
+      return;
+    }
+    if (slideCounter) slideCounter.textContent = (idx + 1) + ' / ' + items.length;
     acc += dt;
     if (barEl) barEl.style.width = clamp((acc / DUR) * 100, 0, 100) + '%';
     if (acc >= DUR) go(1);
@@ -1892,6 +1908,9 @@
 
   function initSlides() {
     if (!deck) return;
+    slideCounter = document.createElement('span');
+    slideCounter.className = 'slide-counter'; slideCounter.setAttribute('aria-live', 'polite');
+    if (captionEl) captionEl.insertAdjacentElement('afterend', slideCounter);
     if (window.LZX_BOARD_STORE) {
       if (fileInput) fileInput.disabled = true;
       LZX_BOARD_STORE.loadGallery().then(saved => {
@@ -2421,8 +2440,8 @@
   let boardReady = !window.LZX_BOARD_STORE;
   let boardSaveVersion = 0;
   let boardSaveStatus = null;
-  let boardCloudKey = '', boardCloudBusy = false, boardCloudRevision = '';
-  let boardRemoved = [], boardCloudOnline = false, boardCloudTimer = null, boardCloudError = false, sharedStrokeCount = 0;
+  let boardCloudVisitor = '', boardCloudKey = '', boardCloudBusy = false, boardCloudRevision = '';
+  let boardRemoved = [], boardCloudOnline = false, boardCloudTimer = null, boardCloudError = false, sharedStrokeCount = 0, boardCloudMessage = '';
   const BOARD_CLOUD = 'https://lizhixian1011-shared-doodle.surefrog16.chatgpt.site';
 
   function boardId() {
@@ -2439,21 +2458,47 @@
       boardCloudKey = Array.from(bytes).map(n => n.toString(16).padStart(2, '0')).join('');
       try { localStorage.setItem('lzx_board_cloud_key', boardCloudKey); } catch (e) {}
     }
-    strokes.forEach(s => { if (!s.id) s.id = boardId(); });
+    try { boardCloudVisitor = meta.visitor || localStorage.getItem('lzx_board_cloud_visitor') || ME; } catch (e) { boardCloudVisitor = meta.visitor || ME; }
+    strokes.forEach(s => {
+      if (!s.id || !/^s[a-zA-Z0-9_-]{8,100}$/.test(s.id)) s.id = boardId();
+      // Older brushes rendered a default seed without saving it.
+      if (!Number.isFinite(s.seed)) s.seed = 1;
+    });
   }
   function boardPending() { return strokes.filter(s => !s._shared); }
   function renderBoardCloud() {
     const count = boardPending().length + boardRemoved.length;
-    showBoardSave(count ? '还有 ' + count + ' 笔更改待上传 · 本机副本保留，联网后自动补传' : (boardCloudOnline ? '共有 ' + sharedStrokeCount + ' 笔共享涂鸦 · 已同步，所有访客可见' : (boardCloudError ? '共享读取暂未成功 · 本机副本保留，会自动重试' : '正在读取共享涂鸦 · 本机副本保留')), boardCloudError);
+    showBoardSave(count ? '还有 ' + count + ' 笔更改待上传 · ' + (boardCloudMessage || '本机副本保留，联网后自动补传') : (boardCloudOnline ? '共有 ' + sharedStrokeCount + ' 笔共享涂鸦 · 已同步，所有访客可见' : (boardCloudError ? '共享读取暂未成功 · 本机副本保留，会自动重试' : '正在读取共享涂鸦 · 本机副本保留')), boardCloudError);
   }
   function boardRequest(path, body, timeout = 30000) {
-    const ctl = window.AbortController ? new AbortController() : null;
-    const timer = setTimeout(() => { if (ctl) ctl.abort(); }, timeout);
-    return fetch(BOARD_CLOUD + path, {method: body ? 'POST' : 'GET', cache:'no-store', signal:ctl ? ctl.signal : undefined,
-      ...(body ? {headers:{'Content-Type':'text/plain;charset=UTF-8'},body:JSON.stringify(body)} : {})})
-      .then(r => { if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-      .then(d => { if (!d || !d.ok) throw new Error('共享保存失败'); return d; })
-      .finally(() => clearTimeout(timer));
+    // XMLHttpRequest also works in older embedded browsers; always enforce a timeout.
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(body ? 'POST' : 'GET', BOARD_CLOUD + path, true);
+      xhr.timeout = timeout;
+      if (body) xhr.setRequestHeader('Content-Type', 'text/plain;charset=UTF-8');
+      xhr.onload = () => {
+        let d; try { d = JSON.parse(xhr.responseText); } catch (e) {}
+        if (xhr.status >= 200 && xhr.status < 300 && d && d.ok) return resolve(d);
+        const error = new Error(d && d.error || 'HTTP ' + xhr.status);
+        error.status = xhr.status; error.code = d && d.error; reject(error);
+      };
+      xhr.onerror = () => reject(new Error('网络未能连接共享服务器，正在重试'));
+      xhr.ontimeout = () => reject(new Error('上传超时，正在重试'));
+      xhr.send(body ? JSON.stringify(body) : null);
+    });
+  }
+  async function writeBoardCloud(body) {
+    try { return await boardRequest('/api/board', {...body, visitor:boardCloudVisitor,key:boardCloudKey}); }
+    catch(e) {
+      if (e.status !== 403 || e.code !== 'not-owner') throw e;
+      // A browser restored its visitor ID but lost the matching key. Keep all strokes,
+      // and register a separate upload identity without changing the note/candle visitor.
+      boardCloudVisitor = 'v' + boardId().slice(1);
+      try { localStorage.setItem('lzx_board_cloud_visitor', boardCloudVisitor); } catch(e) {}
+      saveBoard(false);
+      return boardRequest('/api/board', {...body, visitor:boardCloudVisitor,key:boardCloudKey});
+    }
   }
   function scheduleBoardCloud() {
     if (boardCloudTimer) clearTimeout(boardCloudTimer);
@@ -2463,13 +2508,23 @@
     if (!boardReady || boardCloudBusy || document.hidden) return;
     boardCloudBusy = true;
     try {
-      const pending = boardPending().slice(0, 20), removed = boardRemoved.slice(0, 100);
-      if (pending.length || removed.length) {
-        const additions = pending.map(s => ({id:s.id,t:s.t,c:s.c,w:s.w,seed:s.seed,o:s.o||'',p:s.p}));
-        const d = await boardRequest('/api/board', {visitor:ME,key:boardCloudKey,additions,removed});
-        const accepted = new Set(d.accepted || []), deleted = new Set(d.removed || []);
-        strokes.forEach(s => { if (accepted.has(s.id)) s._shared = true; });
-        boardRemoved = boardRemoved.filter(id => !deleted.has(id));
+      const pending = boardPending().filter(s => !s._retryAt || s._retryAt <= Date.now()).slice(0, 20), removed = boardRemoved.slice(0, 100);
+      let uploadFailure = '';
+      // One rejected legacy stroke must not block all later drawings.
+      for (const s of pending) {
+        try {
+          const d = await writeBoardCloud({additions:[{id:s.id,t:s.t,c:s.c,w:s.w,seed:s.seed,o:s.o||'',p:s.p}],removed:[]});
+          if (!(d.accepted || []).includes(s.id)) throw new Error('服务器尚未确认这笔涂鸦');
+          s._shared = true; saveBoard(false);
+        } catch (e) {
+          uploadFailure = e.code === 'stroke' ? '一笔旧涂鸦格式不兼容，副本保留，其余继续上传' : e.message;
+          if (e.status === 400 || e.status === 413) s._retryAt = Date.now() + 60000;
+          if (!e.status || e.status >= 500 || e.status === 403) break;
+        }
+      }
+      if (removed.length) {
+        const d = await writeBoardCloud({additions:[],removed});
+        boardRemoved = boardRemoved.filter(id => !(d.removed || []).includes(id));
         saveBoard(false);
       }
       const d = await boardRequest('/api/board?revision=' + encodeURIComponent(boardCloudRevision));
@@ -2482,8 +2537,8 @@
         saveBoard(false);
       }
       boardCloudRevision = d.revision || '';
-      boardCloudOnline = true; boardCloudError = false;
-    } catch (e) { boardCloudOnline = false; boardCloudError = true; }
+      boardCloudOnline = true; boardCloudError = !!uploadFailure; boardCloudMessage = uploadFailure;
+    } catch (e) { boardCloudOnline = false; boardCloudError = true; boardCloudMessage = e.message; }
     finally { boardCloudBusy = false; renderBoardCloud(); if (boardPending().length || boardRemoved.length) { if (boardCloudTimer) clearTimeout(boardCloudTimer); boardCloudTimer = setTimeout(syncBoardCloud, boardCloudOnline ? 800 : 10000); } }
   }
   function removeBoardStrokes(removed) {
@@ -2746,7 +2801,7 @@
     const version = ++boardSaveVersion;
     showBoardSave('正在保存涂鸦…');
     if (window.LZX_BOARD_STORE) {
-      LZX_BOARD_STORE.save(strokes, {key:boardCloudKey,removed:boardRemoved.slice()}).then(result => {
+      LZX_BOARD_STORE.save(strokes, {key:boardCloudKey,visitor:boardCloudVisitor,removed:boardRemoved.slice()}).then(result => {
         if (version !== boardSaveVersion) return;
         if (result.ok) renderBoardCloud(); else showBoardSave('本机保存空间不可用，正在尝试共享保存；请用「保存图片」另存备份', true);
       });
@@ -2760,8 +2815,8 @@
   function localPos(e) {
     const r = board.getBoundingClientRect();
     return {
-      x: (e.clientX - r.left) / Math.max(1, r.width) * BW,
-      y: (e.clientY - r.top) / Math.max(1, r.height) * BH
+      x: clamp((e.clientX - r.left) / Math.max(1, r.width) * BW, 0, BW),
+      y: clamp((e.clientY - r.top) / Math.max(1, r.height) * BH, 0, BH)
     };
   }
 
@@ -2824,7 +2879,7 @@
         repaintAll();
         saveBoard();
         syncBoardCloud();
-      }).catch(() => { boardReady = true; showBoardSave('已读取兼容副本，请用「保存图片」另存备份', true); });
+      }).catch(() => { initBoardIdentity(); boardReady = true; saveBoard(); syncBoardCloud(); });
     } else { initBoardIdentity(); boardReady = true; saveBoard(); syncBoardCloud(); }
     renderBrushUI();
 

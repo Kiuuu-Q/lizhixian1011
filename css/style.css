@@ -3416,3 +3416,5 @@ button, a, input, textarea { touch-action: manipulation; }
 #board { touch-action: none; }
 .board-save-status { margin: 10px 0; color: var(--ink-soft); font-size: 13px; text-align: center; }
 .board-save-status.warn { color: #b66a15; }
+
+.slide-counter { display:block; text-align:center; font-size:13px; color:#706690; margin:8px 0; font-variant-numeric:tabular-nums; }
