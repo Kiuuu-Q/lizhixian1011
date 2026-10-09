@@ -1211,7 +1211,11 @@
     const el = $('#lightShared');
     if (!el) return;
     if (window.LZX_API && LZX_API.isOnline() === false) {
-      el.textContent = '本机模式 · 暂时连不上服务器，你点的 ' + litCount + ' 次先记在这台设备上';
+      /* ⚠️ 文案要说清两件事：① **看到的数字不是 0，是上次的值**（否则用户以为数据丢了）；
+         ② 正在自动重试、不用刷新。再带上具体原因方便排查。 */
+      var why = (LZX_API.lastError && LZX_API.lastError()) || '';
+      el.textContent = '⚠ 暂时连不上服务器' + (why ? '（' + why + '）' : '') +
+        ' —— 现在显示的是上次看到的数据，正在自动重试，不用刷新';
       el.classList.add('warn');
       return;
     }
@@ -2251,6 +2255,24 @@
     if (!wall) return;
     renderPicker();
     renderPreview();
+    /* 离线兜底：把上次从服务器拉到的留言先摆出来 ——
+       这样即使这一刻连不上，也能看到「大家写的」而不是一片空白。
+       连上之后 syncNotes 会用服务器数据整体替换，不会重复。 */
+    var cached = readCache();
+    if (cached && Array.isArray(cached.notes) && cached.notes.length) {
+      var have = {};
+      notes.forEach(function (n) { have[n.id] = 1; });
+      cached.notes.slice().reverse().forEach(function (n) {
+        if (!n.id || have[n.id]) return;
+        notes.unshift({
+          id: n.id, text: n.text, from: n.from || n.name || '',
+          c: (typeof n.c === 'number') ? n.c : 0,
+          s: n.s || 'round', m: n.m || 'paper',
+          tilt: (typeof n.tilt === 'number') ? n.tilt : 0,
+          by: n.by, at: n.at
+        });
+      });
+    }
     renderWall(null);
     window.__noteHint = emptyTip;
     /* 上次没传上去的留言（刷新前留下的），接着重试 */
@@ -2911,14 +2933,46 @@
   var SYNC_MS = 20000;
   var syncTimer = null;
 
+  /* 最近一次从服务器拿到的数据，存在本机。
+     🔴 这是**离线兜底**：用户报「另一台设备打开蜡烛变 0」——
+        真实原因是那一刻没连上服务器，于是大数字显示 0，看着像数据丢了。
+        有了这份缓存，刚打开（还没连上）时先把**上次看到的值**摆出来，
+        连上之后再被真实数据覆盖。 */
+  var LAST_KEY = 'lzx_last_state';
+
+  function cacheState(d) {
+    if (!d || !d.ok) return;
+    try {
+      store.set(LAST_KEY, {
+        candles: d.candles || 0,
+        hosts: d.hosts || 0,
+        notes: (d.notes || []).slice(-20),
+        at: Date.now()
+      });
+    } catch (e) { /* 存档失败无所谓，不影响主流程 */ }
+  }
+
+  function readCache() {
+    try { return store.get(LAST_KEY, null); } catch (e) { return null; }
+  }
+
   function syncAll() {
     if (!window.LZX_API || document.hidden) return;
+    LZX_API.state().then(cacheState);
     syncCandles();
     syncDecos();
     syncNotes();
   }
 
   function startSync() {
+    /* 先把上次缓存的值摆出来（避免「刚打开还没连上」时数字是 0） */
+    var last = readCache();
+    if (last && typeof last.candles === 'number') {
+      if (last.candles > gCandles) gCandles = last.candles;
+      if ((last.hosts || 0) > gHosts) gHosts = last.hosts;
+      renderCount(false);
+      renderShared();
+    }
     syncAll();
     /* 数据服务恢复的一刻，把落下的数据补上（api.js 重试成功时会通知这里） */
     if (window.LZX_API && LZX_API.onStatus) {

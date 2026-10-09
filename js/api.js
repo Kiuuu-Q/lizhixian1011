@@ -30,14 +30,18 @@
 
   var online = null;          /* null 未知 / true / false */
   var gate = false;           /* true = 暂停发新请求，等退避重试放行 */
-  var backoff = 3000;         /* 失败后的退避起点，逐步翻倍 */
+  /* ⚠️ 退避从 1 秒起步（原来 3 秒）、倍率用 ×2：1→2→4→8→16→30 封顶。
+     原因：用户「另一台设备打开看到 0」多半是**打开那一瞬间请求失败**，
+     起步太慢会让「本机模式」白挂好几秒。快速重试能自己爬出来。 */
+  var backoff = 1000;
   var MAX_BACKOFF = 30000;
+  var BACKOFF_MUL = 2;
   var retryTimer = null;
   var statusFns = [];         /* 状态变化通知（app.js 靠它在恢复的一刻补数据） */
   var inflightState = null;   /* 同一时刻的多处 state() 合并成一次请求 */
 
   /* 超时：读宽松、写适中、上传很宽松（手机流量下大图要慢得多） */
-  var T_GET = 20000;
+  var T_GET = 12000;          /* 读：服务端偶尔要 4~5 秒，12 秒够用；太长会让「本机模式」白挂 */
   var T_POST = 15000;
   var T_UPLOAD = 60000;
 
@@ -62,7 +66,7 @@
 
   function markUp() {
     gate = false;
-    backoff = 3000;
+    backoff = 1000;
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
     if (online !== true) {
       online = true;
@@ -70,6 +74,10 @@
       emit();
     }
   }
+
+  /* 最后一次失败的原因（给用户看的，用于诊断「为什么连不上」） */
+  var lastErr = '';
+  function noteErr(why) { lastErr = why; }
 
   function markDown() {
     gate = true;
@@ -90,7 +98,7 @@
     retryTimer = setTimeout(function () {
       retryTimer = null;
       gate = false;
-      backoff = Math.min(backoff * 1.7, MAX_BACKOFF);
+      backoff = Math.min(backoff * BACKOFF_MUL, MAX_BACKOFF);
       call('/api/state', null, T_GET);   /* 探活，结果由 markUp/markDown 处理 */
     }, backoff);
   }
@@ -109,15 +117,19 @@
         opt.headers = { 'Content-Type': 'application/json' };
         opt.body = JSON.stringify(body);
       }
-      fetch(BASE + path, opt).then(function (r) {
+      /* ⚠️ 加一个随机参数绕过中间层缓存 —— 曾经不带参数时，
+         同一时刻不同设备可能拿到**不同版本**的数据（一个 66、一个 72）。 */
+      var bust = (BASE + path).indexOf('?') >= 0 ? '&' : '?';
+      fetch(BASE + path + bust + '_=' + Date.now() + Math.random().toString(36).slice(2, 6), opt).then(function (r) {
         clearTimeout(timer);
         return r.json().catch(function () { return {}; }).then(function (j) {
           if (r.status >= 500) { markDown(); return resolve(null); }
           markUp();
           resolve(j);
         });
-      }).catch(function () {
+      }).catch(function (e) {
         clearTimeout(timer);
+        noteErr(e && e.name === 'AbortError' ? '请求超时' : '网络错误');
         markDown();
         resolve(null);
       });
@@ -165,12 +177,13 @@
     setBase: function (v) { BASE = String(v || '').replace(/\/$/, ''); },
     visitor: visitor,
     onStatus: function (fn) { if (typeof fn === 'function') statusFns.push(fn); },
+    lastError: function () { return lastErr; },
     /* 手动催一次重试（页面回到前台、网络恢复时用） */
     retryNow: function () {
       if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
       if (!gate) return;
       gate = false;
-      backoff = 3000;
+      backoff = 1000;
       call('/api/state', null, T_GET);
     },
 
