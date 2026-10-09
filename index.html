@@ -18,9 +18,9 @@
 <title>Happy Birthday · 李芷贤 · 2026.10.11</title>
 <meta name="description" content="给李芷贤的生日礼物 · lizhixian1011" data-page-node-id="OJ4kHH9v52wKa7M9MDyU9t" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%82%3C/text%3E%3C/svg%3E" data-page-node-id="OPyoOn0nsTq8yXHuLjQlrC" />
-<link rel="stylesheet" href="assets/fonts/fonts.css?v=20261010e" />
+<link rel="stylesheet" href="assets/fonts/fonts.css?v=20261010f" />
 <link rel="preload" href="assets/fonts/pacifico-latin-page.woff2" as="font" type="font/woff2" crossorigin />
-<link rel="stylesheet" href="css/style.css?v=20261010e" data-page-node-id="0HpyyvqljcHDDxOBY3idKB" />
+<link rel="stylesheet" href="css/style.css?v=20261010f" data-page-node-id="0HpyyvqljcHDDxOBY3idKB" />
 </head>
 <body data-page-node-id="AwuTYKrY7lwVsBvQiuC1pT">
 
@@ -552,9 +552,14 @@
       <p class="board-tip">涂鸦自动上传并保留本机副本，其他设备打开也能看到 · 「清空我的」只清掉你画的，不动别人画的 ✎</p>
     </div>
 
+    <div class="board-mode-bar">
+      <span id="boardMode" class="board-mode-text" role="status">浏览模式</span>
+      <button id="drawStart" class="ctrl-btn" type="button" aria-pressed="false">画笔</button>
+      <button id="drawBrowse" class="ctrl-btn" type="button" disabled>停止绘画</button>
+    </div>
     <div class="board-canvas-wrap">
-      <canvas id="board" width="1200" height="1400" aria-label="涂鸦画板"></canvas>
-      <span class="board-hint" id="boardHint">在这里画点什么吧 ✎</span>
+      <canvas id="board" width="1200" height="2800" aria-label="涂鸦画板"></canvas>
+      <span class="board-hint" id="boardHint">点击画笔后开始绘画 ✎</span>
     </div>
   </div>
 </section>
@@ -585,9 +590,9 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" data-page-node-id="uG9DR1VJlGj79hkclSP42r"></div>
 
-<script src="js/api.js?v=20261010e"></script>
-<script src="js/bgm.js?v=20261010e"></script>
-<script src="js/board-store.js?v=20261010e"></script>
-<script src="js/app.js?v=20261010e"></script>
+<script src="js/api.js?v=20261010f"></script>
+<script src="js/bgm.js?v=20261010f"></script>
+<script src="js/board-store.js?v=20261010f"></script>
+<script src="js/app.js?v=20261010f"></script>
 </body>
 </html>

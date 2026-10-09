@@ -2428,7 +2428,7 @@
      ========================================================= */
   const board    = $('#board');
   const boardHint = $('#boardHint');
-  const BW = 1200, BH = 1400;            // 逻辑坐标，和显示尺寸无关
+  const BW = 1200, BH = 2800;            // 逻辑坐标，和显示尺寸无关
   const bdctx = board ? board.getContext('2d') : null;
 
   /* 已完成的笔画单独放一层，画面板时「已画好的 + 正在画的」分开合成，
@@ -2584,6 +2584,7 @@
   const isMine = s => !!s && s.o === ME;
   const myStrokeCount = () => strokes.filter(isMine).length;
 
+  let drawingEnabled = false;
   let curBrush = 'pen';
   let curColor = PEN_COLORS[0];
   let curSize = 8;
@@ -2833,16 +2834,30 @@
     return true;
   }
 
+  function setBoardDrawing(enabled) {
+    if (enabled && !boardReady) { toast('正在恢复涂鸦，请稍候'); return; }
+    drawingEnabled = enabled;
+    if (board) board.classList.toggle('is-drawing', enabled);
+    const mode = $('#boardMode');
+    if (mode) mode.textContent = enabled ? '正在绘画' : '浏览模式';
+    const stop = $('#drawBrowse');
+    if (stop) stop.disabled = !enabled;
+    const start = $('#drawStart');
+    if (start) start.setAttribute('aria-pressed', String(enabled));
+    if (boardHint) boardHint.textContent = enabled ? '在这里画点什么吧 ✎' : '点击画笔后开始绘画 ✎';
+  }
+
   function renderBrushUI() {
     const list = $('#brushList');
     if (list) {
       list.innerHTML = BRUSHES.map(b =>
-        '<button class="chip' + (b.k === curBrush ? ' on' : '') + '" data-k="' + b.k +
+        '<button class="chip' + (drawingEnabled && b.k === curBrush ? ' on' : '') + '" data-k="' + b.k +
         '" type="button">' + b.n + '</button>').join('');
       list.onclick = e => {
         const btn = e.target.closest('.chip');
         if (!btn) return;
         curBrush = btn.dataset.k;
+        setBoardDrawing(true);
         renderBrushUI();
       };
     }
@@ -2883,7 +2898,11 @@
         syncBoardCloud();
       }).catch(() => { initBoardIdentity(); boardReady = true; saveBoard(); syncBoardCloud(); });
     } else { initBoardIdentity(); boardReady = true; saveBoard(); syncBoardCloud(); }
+    setBoardDrawing(false);
     renderBrushUI();
+    const drawStart = $('#drawStart'), drawBrowse = $('#drawBrowse');
+    if (drawStart) drawStart.addEventListener('click', () => { setBoardDrawing(true); renderBrushUI(); });
+    if (drawBrowse) drawBrowse.addEventListener('click', () => { endStroke(); setBoardDrawing(false); renderBrushUI(); });
 
     const sizeEl = $('#penSize');
     const sizeNow = $('#sizeNow');
@@ -2951,6 +2970,7 @@
     }
 
     function beginBoardStroke(e) {
+      if (!drawingEnabled) return;
       if (!boardReady) { toast('正在恢复涂鸦，请稍候'); return; }
       if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') return;
       boardDraw = true;
@@ -2996,8 +3016,8 @@
       if (e && e.preventDefault) e.preventDefault();
     }
 
-    window.addEventListener('pagehide', () => endStroke());
-    document.addEventListener('visibilitychange', () => { if (document.hidden) endStroke(); });
+    window.addEventListener('pagehide', () => { endStroke(); setBoardDrawing(false); renderBrushUI(); });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) { endStroke(); setBoardDrawing(false); renderBrushUI(); } });
     if (window.PointerEvent) {
       board.addEventListener('pointerdown', beginBoardStroke);
       board.addEventListener('pointermove', moveBoardStroke);
