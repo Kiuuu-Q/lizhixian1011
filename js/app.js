@@ -1227,8 +1227,10 @@
       /* ⚠️ 文案要说清两件事：① **看到的数字不是 0，是上次的值**（否则用户以为数据丢了）；
          ② 正在自动重试、不用刷新。再带上具体原因方便排查。 */
       var why = (LZX_API.lastError && LZX_API.lastError()) || '';
+      const known = gLoaded || gCandles > 0;
       el.textContent = '⚠ 暂时连不上服务器' + (why ? '（' + why + '）' : '') +
-        ' —— 现在显示的是上次看到的数据，正在自动重试，不用刷新';
+        (known ? ' —— 现在显示的是上次看到的数据' : ' —— 尚未读取到大家的记录，不能据此判断为 0') +
+        '，正在自动重试，不用刷新';
       el.classList.add('warn');
       return;
     }
@@ -1332,7 +1334,7 @@
        写进去完全看不见，表现就是「大数字点了没反应」。 */
     const el = document.getElementById('lightCount') || lightNum;
     if (!el) return;
-    el.textContent = shownCount();
+    el.textContent = (!gLoaded && !gCandles && !litCount && !pendingCount()) ? '…' : shownCount();
     if (bump) {
       /* 动画挂在 .counter-num（父级）上 —— CSS 里的选择器就是 .counter-num.bump，
          之前加到 <b> 上，等于这个跳动动画从来没生效过 */
