@@ -2741,7 +2741,7 @@ button, input, textarea { font: inherit; color: inherit; }
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: var(--board-ar, 1200 / 1400);
+  aspect-ratio: var(--board-ar, 1200 / 700);
   background: #fbfaff;
   touch-action: none;
   cursor: crosshair;
